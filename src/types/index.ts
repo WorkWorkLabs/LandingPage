@@ -52,7 +52,7 @@ export interface TeamMember {
 }
 
 export interface SocialLink {
-  platform: 'twitter' | 'linkedin' | 'github' | 'email'
+  platform: 'x' | 'twitter' | 'linkedin' | 'github' | 'email'
   url: string
 }
 

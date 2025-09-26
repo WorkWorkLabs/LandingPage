@@ -18,16 +18,28 @@
       <!-- Genesis Team Section -->
       <div class="genesis-team-section">
         <h3 class="genesis-team-title">Genesis Team</h3>
-        <div class="genesis-team-image">
-          <img src="/images/genesisteam.svg" alt="Genesis Team" />
+        <div v-if="loading" class="loading-message">Loading team members...</div>
+        <div v-else-if="error" class="error-message">{{ error }}</div>
+        <div v-else class="team-grid">
+          <TeamMemberCard
+            v-for="member in genesisTeam"
+            :key="member.id"
+            :member="member"
+          />
         </div>
       </div>
 
-      <!-- Team Member Section -->
+      <!-- Team Members Section -->
       <div class="team-member-section">
-        <h3 class="team-member-title">Team Member</h3>
-        <div class="team-member-content">
-          <img src="/images/teammember.svg" alt="Team Member" />
+        <h3 class="team-member-title">Team Members</h3>
+        <div v-if="loading" class="loading-message">Loading team members...</div>
+        <div v-else-if="error" class="error-message">{{ error }}</div>
+        <div v-else class="team-grid">
+          <TeamMemberCard
+            v-for="member in teamMembers"
+            :key="member.id"
+            :member="member"
+          />
         </div>
       </div>
 
@@ -36,7 +48,10 @@
 </template>
 
 <script setup lang="ts">
-// No imports needed for this section
+import { useTeamMembers } from '@/composables/useTeamMembers'
+import TeamMemberCard from './TeamMemberCard.vue'
+
+const { genesisTeam, teamMembers, loading, error } = useTeamMembers()
 </script>
 
 <style scoped>
@@ -121,34 +136,12 @@
   color: #00A1FF;
 }
 
-.genesis-team-section {
-  margin-top: 64px;
-}
-
-.genesis-team-title {
-  font-family: 'Roboto', sans-serif;
-  font-weight: bold;
-  font-size: 32px;
-  line-height: 38px;
-  letter-spacing: 0%;
-  color: #FFFFFF;
-  text-align: left;
-  margin-bottom: 24px;
-}
-
-.genesis-team-image {
-  text-align: left;
-}
-
-.genesis-team-image img {
-  max-width: 100%;
-  height: auto;
-}
-
+.genesis-team-section,
 .team-member-section {
   margin-top: 64px;
 }
 
+.genesis-team-title,
 .team-member-title {
   font-family: 'Roboto', sans-serif;
   font-weight: bold;
@@ -160,13 +153,30 @@
   margin-bottom: 24px;
 }
 
-.team-member-content {
-  text-align: left;
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+  margin-top: 2rem;
 }
 
-.team-member-content img {
-  max-width: 100%;
-  height: auto;
+.loading-message,
+.error-message {
+  color: white;
+  text-align: center;
+  padding: 2rem;
+  font-size: 1.1rem;
+}
+
+.error-message {
+  color: #ff6b6b;
+}
+
+@media (max-width: 768px) {
+  .team-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
 }
 
 .text-primary {
