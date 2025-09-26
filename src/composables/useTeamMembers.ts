@@ -19,11 +19,16 @@ export const useTeamMembers = () => {
       const trimmed = line.trim()
       
       // 检测团队分类（# 开头）
-      if (trimmed.startsWith('# ') && !trimmed.startsWith('# Team Members')) {
-        if (trimmed.includes('Genesis Team')) {
+      if (trimmed.startsWith('# ')) {
+        if (trimmed === '# Genesis Team') {
           currentSection = 'genesis'
-        } else if (trimmed.includes('Team Members')) {
-          currentSection = 'regular'
+        } else if (trimmed === '# Team Members') {
+          // 只有当标题完全匹配"# Team Members"时才切换（排除文档总标题）
+          // 通过检查当前行的位置，如果不是文档开头就是分组标题
+          const lineIndex = lines.indexOf(line)
+          if (lineIndex > 0) { // 不是第一行
+            currentSection = 'regular'
+          }
         }
         continue
       }
