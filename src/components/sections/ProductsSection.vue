@@ -106,9 +106,9 @@ onUnmounted(() => {
 const openLink = (productId: string) => {
   const linkMap: Record<string, string> = {
     '1': 'https://google.com',
-    '2': 'https://baidu.com', 
+    '2': 'https://workwork.works', 
     '3': 'https://yahoo.com',
-    '4': 'https://bing.com'
+    '4': 'https://workwork.works'
   }
   
   const url = linkMap[productId]
