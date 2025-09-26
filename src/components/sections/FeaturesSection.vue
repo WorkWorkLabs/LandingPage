@@ -5,7 +5,7 @@
       style="padding-left: 100px; padding-right: 100px"
     >
       <div class="section-header">
-        <h2 class="section-title">What we are doing?</h2>
+        <h2 class="section-title">What we are doing</h2>
         <p class="section-description">
           WorkWork is building a global remote work ecosystem for digital
           nomads, remote workers, freelancers, and super individuals.

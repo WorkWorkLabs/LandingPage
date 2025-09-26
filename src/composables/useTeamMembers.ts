@@ -15,26 +15,35 @@ export const useTeamMembers = () => {
     let currentMember: Partial<TeamMember> | null = null
     let currentSection = 'genesis' // 默认为genesis团队
     
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i]
       const trimmed = line.trim()
       
       // 检测团队分类（# 开头）
       if (trimmed.startsWith('# ')) {
+        // 先保存当前成员（如果有的话）到当前分组
+        if (currentMember && currentMember.name) {
+          if (currentSection === 'genesis') {
+            genesis.push(currentMember as TeamMember)
+          } else {
+            regular.push(currentMember as TeamMember)
+          }
+          currentMember = null
+        }
+        
+        // 然后切换分组
         if (trimmed === '# Genesis Team') {
           currentSection = 'genesis'
-        } else if (trimmed === '# Team Members') {
-          // 只有当标题完全匹配"# Team Members"时才切换（排除文档总标题）
-          // 通过检查当前行的位置，如果不是文档开头就是分组标题
-          const lineIndex = lines.indexOf(line)
-          if (lineIndex > 0) { // 不是第一行
-            currentSection = 'regular'
-          }
+        } else if (trimmed === '# Team Members' && i > 2) {
+          // 确保这不是文档开头的标题行 (第25行左右)
+          currentSection = 'regular'
         }
         continue
       }
       
       // 检测新的团队成员（## 开头）
       if (trimmed.startsWith('## ')) {
+        // 先保存之前的成员
         if (currentMember && currentMember.name) {
           if (currentSection === 'genesis') {
             genesis.push(currentMember as TeamMember)
@@ -42,9 +51,12 @@ export const useTeamMembers = () => {
             regular.push(currentMember as TeamMember)
           }
         }
+        
+        // 创建新成员
+        const memberName = trimmed.substring(3)
         currentMember = {
-          id: trimmed.substring(3).toLowerCase().replace(/\s+/g, '-'),
-          name: trimmed.substring(3),
+          id: memberName.toLowerCase().replace(/\s+/g, '-'),
+          name: memberName,
           title: '',
           social: []
         }

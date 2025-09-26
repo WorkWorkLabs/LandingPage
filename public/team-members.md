@@ -32,7 +32,7 @@
 - **LinkedIn**: https://linkedin.com/in/rizumu
 
 ## BH3GEI
-- **Avatar**: /images/bh3gei-avatar.jpg
+- **Avatar**: https://avatars.githubusercontent.com/bh3gei
 - **Bio**: MSc in CS, UTsukuba | mofa.ai Core Dev
 - **X**: https://x.com/bh3gei_cn
 - **GitHub**: https://github.com/bh3gei
@@ -53,7 +53,7 @@
 - **LinkedIn**: https://linkedin.com/in/stevenlynn
 
 ## LuooooYan
-- **Avatar**: /images/luyan-avatar.jpg
+- **Avatar**: https://work-work.org/images/luoyan-avatar.png
 - **Bio**: "People-oriented" user experience design, Adventure 2025 Unite Portal Design, Apple Vision Pro interactive explorer
 - **X**: https://x.com/luooooyan
 - **GitHub**: https://github.com/luooooyan

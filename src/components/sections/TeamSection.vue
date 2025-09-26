@@ -2,14 +2,24 @@
   <section id="team" class="team-section">
     <div class="container mx-auto">
       <div class="section-header">
-        <h2 class="section-title">We care deeply about the quality of our work</h2>
+        <h2 class="section-title">
+          We care deeply about the quality of our work
+        </h2>
         <p class="section-description">
-          Work Work，Linear has always been a fully remote company. Today, our small but mighty team is distributed across North America and Europe. What unites us is relentless focus, fast execution, and our passion for software craftsmanship. We are all makers at heart and care deeply about the quality of our work, down to the smallest detail.
+          Work Work has always been a fully remote company. Today, our small but
+          mighty team is distributed across Mainland China, Hong Kong and Japan.
+          What unites us is relentless focus, fast execution, and our passion
+          for software craftsmanship. We are all makers at heart and care deeply
+          about the quality of our work, down to the smallest detail.
         </p>
         <div class="join-us-form">
           <h3 class="form-title">Join us</h3>
           <div class="form-group">
-            <input type="email" class="email-input" placeholder="Enter your email" />
+            <input
+              type="email"
+              class="email-input"
+              placeholder="Enter your email"
+            />
             <button type="submit" class="submit-btn">Submit</button>
           </div>
         </div>
@@ -18,7 +28,9 @@
       <!-- Genesis Team Section -->
       <div class="genesis-team-section">
         <h3 class="genesis-team-title">Genesis Team</h3>
-        <div v-if="loading" class="loading-message">Loading team members...</div>
+        <div v-if="loading" class="loading-message">
+          Loading team members...
+        </div>
         <div v-else-if="error" class="error-message">{{ error }}</div>
         <div v-else class="team-grid">
           <TeamMemberCard
@@ -32,7 +44,9 @@
       <!-- Team Members Section -->
       <div class="team-member-section">
         <h3 class="team-member-title">Team Members</h3>
-        <div v-if="loading" class="loading-message">Loading team members...</div>
+        <div v-if="loading" class="loading-message">
+          Loading team members...
+        </div>
         <div v-else-if="error" class="error-message">{{ error }}</div>
         <div v-else class="team-grid">
           <TeamMemberCard
@@ -42,21 +56,20 @@
           />
         </div>
       </div>
-
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { useTeamMembers } from '@/composables/useTeamMembers'
-import TeamMemberCard from './TeamMemberCard.vue'
+import { useTeamMembers } from "@/composables/useTeamMembers";
+import TeamMemberCard from "./TeamMemberCard.vue";
 
-const { genesisTeam, teamMembers, loading, error } = useTeamMembers()
+const { genesisTeam, teamMembers, loading, error } = useTeamMembers();
 </script>
 
 <style scoped>
 .team-section {
-  background-color: #00A1FF;
+  background-color: #00a1ff;
   min-height: calc(100vh - 70px);
   display: flex;
   align-items: center;
@@ -69,29 +82,28 @@ const { genesisTeam, teamMembers, loading, error } = useTeamMembers()
 
 .section-title {
   @apply text-4xl md:text-5xl font-bold;
-  color: #FFFFFF;
+  color: #ffffff;
   text-align: left;
   margin-bottom: 32px;
 }
 
 .section-description {
-  font-family: 'Roboto', sans-serif;
+  font-family: "Roboto", sans-serif;
   font-weight: 400;
   font-size: 20px;
   line-height: 24px;
   letter-spacing: 0%;
-  color: #FFFFFF;
+  color: #ffffff;
   text-align: left;
   max-width: none;
 }
-
 
 .join-us-form {
   margin-top: 24px;
 }
 
 .form-title {
-  color: #FFFFFF;
+  color: #ffffff;
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 12px;
@@ -133,7 +145,7 @@ const { genesisTeam, teamMembers, loading, error } = useTeamMembers()
 
 .submit-btn:hover {
   background-color: white;
-  color: #00A1FF;
+  color: #00a1ff;
 }
 
 .genesis-team-section,
@@ -143,12 +155,12 @@ const { genesisTeam, teamMembers, loading, error } = useTeamMembers()
 
 .genesis-team-title,
 .team-member-title {
-  font-family: 'Roboto', sans-serif;
+  font-family: "Roboto", sans-serif;
   font-weight: bold;
   font-size: 32px;
   line-height: 38px;
   letter-spacing: 0%;
-  color: #FFFFFF;
+  color: #ffffff;
   text-align: left;
   margin-bottom: 24px;
 }
@@ -156,8 +168,16 @@ const { genesisTeam, teamMembers, loading, error } = useTeamMembers()
 .team-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 2rem;
+  gap: 2rem 1.5rem; /* 行间距2rem，列间距1.5rem */
   margin-top: 2rem;
+}
+
+/* Genesis Team一行一个成员 */
+.genesis-team-section .team-grid {
+  grid-template-columns: 1fr;
+  max-width: 400px;
+  margin: 2rem 0 0 0;
+  gap: 2rem; /* Genesis Team 固定上下间距 */
 }
 
 .loading-message,
@@ -180,6 +200,6 @@ const { genesisTeam, teamMembers, loading, error } = useTeamMembers()
 }
 
 .text-primary {
-  color: #00A1FF;
+  color: #00a1ff;
 }
 </style>

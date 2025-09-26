@@ -23,7 +23,9 @@
             >
               <img 
                 :src="product.image || '/images/placeholder.svg'" 
-                :alt="product.title" 
+                :alt="product.title"
+                @click="openLink(product.id)"
+                class="clickable-image"
               />
             </div>
           </div>
@@ -100,6 +102,20 @@ onMounted(() => {
 onUnmounted(() => {
   stopAutoPlay()
 })
+
+const openLink = (productId: string) => {
+  const linkMap: Record<string, string> = {
+    '1': 'https://google.com',
+    '2': 'https://baidu.com', 
+    '3': 'https://yahoo.com',
+    '4': 'https://bing.com'
+  }
+  
+  const url = linkMap[productId]
+  if (url) {
+    window.open(url, '_blank')
+  }
+}
 </script>
 
 <style scoped>
@@ -117,6 +133,15 @@ onUnmounted(() => {
 
 .section-title {
   @apply text-4xl md:text-5xl font-bold text-primary mb-6;
+}
+
+.clickable-image {
+  cursor: pointer;
+  transition: opacity 0.3s ease;
+}
+
+.clickable-image:hover {
+  opacity: 0.8;
 }
 
 .section-description {
