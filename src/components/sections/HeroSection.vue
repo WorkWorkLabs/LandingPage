@@ -10,16 +10,27 @@
             <div class="title-line">Work anytime</div>
           </h1>
 
-          <!-- Button -->
-          <BaseButton
-            tag="a"
-            href="https://www.t.me/WorkWorkWeb3/"
-            target="_blank"
-            size="lg"
-            class="join-button"
-          >
-            {{ hero.ctaText }}
-          </BaseButton>
+          <!-- Buttons -->
+          <div class="button-group">
+            <BaseButton
+              tag="a"
+              :href="hero.ctaLink"
+              target="_blank"
+              size="lg"
+              class="join-button primary"
+            >
+              {{ hero.ctaText }}
+            </BaseButton>
+            <BaseButton
+              tag="a"
+              :href="hero.secondaryCta.link"
+              target="_blank"
+              size="lg"
+              class="docs-button secondary"
+            >
+              {{ hero.secondaryCta.text }}
+            </BaseButton>
+          </div>
 
           <!-- Description -->
           <p class="hero-description">
@@ -148,15 +159,23 @@ onUnmounted(() => {
 
 /* .button-container is no longer needed as it's part of the flex layout */
 
-.join-button {
-  /* 常态：深蓝色背景，白色文字（原来的颜色） */
+/* Button group layout */
+.button-group {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Primary button styles (Join now) */
+.join-button.primary {
   background-color: #00375d !important;
   color: white !important;
   border: none;
-
-  padding: 12px 32px; /* 匹配SVG中的按钮尺寸 */
-  font-size: 24px; /* 匹配SVG中的字体大小 */
-  font-weight: 700; /* 加粗 */
+  padding: 12px 32px;
+  font-size: 24px;
+  font-weight: 700;
   border-radius: 999px;
   white-space: nowrap;
   transition: all 0.3s ease;
@@ -164,13 +183,34 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.join-button:hover,
-.join-button:focus {
-  /* 悬浮态：稍深一点的浅蓝色 */
+.join-button.primary:hover,
+.join-button.primary:focus {
   background-color: #0088cc !important;
   color: white !important;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 136, 204, 0.3);
+}
+
+/* Secondary button styles (View Docs) */
+.docs-button.secondary {
+  background-color: rgba(255, 255, 255, 0.15) !important; /* 稍微深一点的半透明背景 */
+  color: white !important;
+  border: none !important;
+  padding: 12px 32px;
+  font-size: 24px;
+  font-weight: 500;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.docs-button.secondary:hover,
+.docs-button.secondary:focus {
+  background-color: rgba(255, 255, 255, 0.25) !important; /* 悬浮时稍微更深 */
+  color: white !important;
+  transform: translateY(-1px);
 }
 
 /* 响应式调整 */
@@ -188,12 +228,26 @@ onUnmounted(() => {
     font-size: 18px;
   }
 
-  .join-button {
-    padding: 10px 28px;
-    font-size: 20px;
+  .button-group {
+    gap: 12px;
+    flex-direction: column;
+    width: 100%;
   }
 
-  .join-button:hover {
+  .join-button.primary,
+  .docs-button.secondary {
+    padding: 10px 28px;
+    font-size: 20px;
+    width: 200px;
+    max-width: 90%;
+  }
+
+  .docs-button.secondary {
+    font-weight: 400; /* 移动端更轻的字重 */
+  }
+
+  .join-button.primary:hover,
+  .docs-button.secondary:hover {
     transform: translateY(-1px);
   }
 }

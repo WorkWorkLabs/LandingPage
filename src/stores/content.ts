@@ -18,7 +18,11 @@ export const useContentStore = defineStore('content', () => {
     subtitle: 'Work anytime',
     description: 'Committed to breaking geographical limitations and creating digital infrastructure for global community collaboration',
     ctaText: 'Join now',
-    ctaLink: '#contact'
+    ctaLink: 'https://www.t.me/WorkWorkWeb3/',
+    secondaryCta: {
+      text: 'View Docs',
+      link: 'https://docs.work-work.org/'
+    }
   })
 
   // Features
