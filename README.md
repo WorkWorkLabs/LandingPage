@@ -196,4 +196,4 @@ MIT License - see LICENSE file for details
 
 ---
 
-**Built with ❤️ using Vue 3 + TypeScript**
+**Built with ❤️ using Vue3**
