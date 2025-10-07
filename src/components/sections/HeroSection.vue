@@ -34,8 +34,8 @@
 
           <!-- Description -->
           <p class="hero-description">
-            Committed to breaking geographical limitations and creating<br />
-            digital infrastructure for global community collaboration
+            The AI x Crypto Super App for Digital Nomads.<br />
+            Find jobs, get paid in stablecoins, and live anywhere. 🌍 Work smarter. Earn globally. Live freely.
           </p>
         </div>
       </div>

@@ -2,7 +2,7 @@
   <section id="products" class="products-section">
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
       <div class="section-header">
-        <h2 class="section-title">Interim results</h2>
+        <h2 class="section-title">WorkWork Ecosystem</h2>
         <p class="section-description">
           WorkWork connect users with socially meaningful opportunities
         </p>
