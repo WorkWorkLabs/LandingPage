@@ -70,7 +70,7 @@
             <span class="nav-separator">|</span>
             <a href="#features" class="nav-link">Working</a>
             <span class="nav-separator">|</span>
-            <a href="#products" class="nav-link">Case</a>
+            <a href="#products" class="nav-link">Services</a>
             <span class="nav-separator">|</span>
             <a href="#contact" class="nav-link">Contact Us</a>
           </nav>

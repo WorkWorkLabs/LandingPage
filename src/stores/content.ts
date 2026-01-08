@@ -14,7 +14,7 @@ export const useContentStore = defineStore("content", () => {
   const navigation = ref<NavItem[]>([
     { id: "home", label: "Home", href: "#hero" },
     { id: "working", label: "What we are doing", href: "#features" },
-    { id: "case", label: "Case", href: "#products" },
+    { id: "case", label: "Services", href: "#products" },
     { id: "contact", label: "Contact Us", href: "#contact" },
   ]);
 
