@@ -24,7 +24,7 @@ export const useContentStore = defineStore("content", () => {
     title: "Work everywhere",
     subtitle: "Work anytime",
     description:
-      "The AI x Crypto Super App for Digital Nomads. Find jobs, get paid in stablecoins, and live anywhere. 🌍 Work smarter. Earn globally. Live freely.",
+      "The AI x Crypto Super App for Digital Nomads. Get paid in stablecoins, and live anywhere. 🌍 Work smarter. Earn globally. Live freely.",
     ctaText: "Join now",
     ctaLink: "https://www.t.me/WorkWorkWeb3/",
     secondaryCta: {
