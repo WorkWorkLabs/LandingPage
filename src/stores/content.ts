@@ -15,7 +15,6 @@ export const useContentStore = defineStore("content", () => {
     { id: "home", label: "Home", href: "#hero" },
     { id: "working", label: "What we are doing", href: "#features" },
     { id: "case", label: "Case", href: "#products" },
-    { id: "team", label: "Team", href: "#team" },
     { id: "contact", label: "Contact Us", href: "#contact" },
   ]);
 

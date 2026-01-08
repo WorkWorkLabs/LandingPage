@@ -72,8 +72,6 @@
             <span class="nav-separator">|</span>
             <a href="#products" class="nav-link">Case</a>
             <span class="nav-separator">|</span>
-            <a href="#team" class="nav-link">Team</a>
-            <span class="nav-separator">|</span>
             <a href="#contact" class="nav-link">Contact Us</a>
           </nav>
         </div>

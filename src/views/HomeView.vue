@@ -5,7 +5,6 @@
     <ProductsSection />
     <CommunityStatsSection />
     <TestimonialSection />
-    <TeamSection />
     <ContactSection />
   </div>
 </template>
@@ -17,7 +16,6 @@ import FeaturesSection from '@/components/sections/FeaturesSection.vue'
 import ProductsSection from '@/components/sections/ProductsSection.vue'
 import CommunityStatsSection from '@/components/sections/CommunityStatsSection.vue'
 import TestimonialSection from '@/components/sections/TestimonialSection.vue'
-import TeamSection from '@/components/sections/TeamSection.vue'
 import ContactSection from '@/components/sections/ContactSection.vue'
 
 // SEO setup (can be extended with vue-head or @unhead/vue later)
