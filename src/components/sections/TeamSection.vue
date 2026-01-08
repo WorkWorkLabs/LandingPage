@@ -25,22 +25,6 @@
         </div>
       </div>
 
-      <!-- Genesis Team Section -->
-      <div class="genesis-team-section">
-        <h3 class="genesis-team-title">Genesis Team</h3>
-        <div v-if="loading" class="loading-message">
-          Loading team members...
-        </div>
-        <div v-else-if="error" class="error-message">{{ error }}</div>
-        <div v-else class="team-grid">
-          <TeamMemberCard
-            v-for="member in genesisTeam"
-            :key="member.id"
-            :member="member"
-          />
-        </div>
-      </div>
-
       <!-- Team Members Section -->
       <div class="team-member-section">
         <h3 class="team-member-title">Team Members</h3>
@@ -64,7 +48,7 @@
 import { useTeamMembers } from "@/composables/useTeamMembers";
 import TeamMemberCard from "./TeamMemberCard.vue";
 
-const { genesisTeam, teamMembers, loading, error } = useTeamMembers();
+const { teamMembers, loading, error } = useTeamMembers();
 </script>
 
 <style scoped>
@@ -148,12 +132,10 @@ const { genesisTeam, teamMembers, loading, error } = useTeamMembers();
   color: #00a1ff;
 }
 
-.genesis-team-section,
 .team-member-section {
   margin-top: 64px;
 }
 
-.genesis-team-title,
 .team-member-title {
   font-family: "Roboto", sans-serif;
   font-weight: bold;
@@ -170,14 +152,6 @@ const { genesisTeam, teamMembers, loading, error } = useTeamMembers();
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 2rem 1.5rem; /* 行间距2rem，列间距1.5rem */
   margin-top: 2rem;
-}
-
-/* Genesis Team一行一个成员 */
-.genesis-team-section .team-grid {
-  grid-template-columns: 1fr;
-  max-width: 400px;
-  margin: 2rem 0 0 0;
-  gap: 2rem; /* Genesis Team 固定上下间距 */
 }
 
 .loading-message,

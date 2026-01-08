@@ -2,18 +2,16 @@ import { ref, onMounted } from 'vue'
 import type { TeamMember, SocialLink } from '@/types'
 
 export const useTeamMembers = () => {
-  const genesisTeam = ref<TeamMember[]>([])
   const teamMembers = ref<TeamMember[]>([])
   const loading = ref(true)
   const error = ref<string | null>(null)
 
   const parseMarkdown = (markdown: string) => {
-    const genesis: TeamMember[] = []
     const regular: TeamMember[] = []
     const lines = markdown.split('\n')
     
     let currentMember: Partial<TeamMember> | null = null
-    let currentSection = 'genesis' // 默认为genesis团队
+    let currentSection = 'regular'
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]
@@ -23,19 +21,15 @@ export const useTeamMembers = () => {
       if (trimmed.startsWith('# ')) {
         // 先保存当前成员（如果有的话）到当前分组
         if (currentMember && currentMember.name) {
-          if (currentSection === 'genesis') {
-            genesis.push(currentMember as TeamMember)
-          } else {
+          if (currentSection === 'regular') {
             regular.push(currentMember as TeamMember)
           }
           currentMember = null
         }
         
         // 然后切换分组
-        if (trimmed === '# Genesis Team') {
-          currentSection = 'genesis'
-        } else if (trimmed === '# Team Members' && i > 2) {
-          // 确保这不是文档开头的标题行 (第25行左右)
+        if (trimmed === '# Team Members' && i > 2) {
+          // 确保这不是文档开头的标题行
           currentSection = 'regular'
         }
         continue
@@ -45,9 +39,7 @@ export const useTeamMembers = () => {
       if (trimmed.startsWith('## ')) {
         // 先保存之前的成员
         if (currentMember && currentMember.name) {
-          if (currentSection === 'genesis') {
-            genesis.push(currentMember as TeamMember)
-          } else {
+          if (currentSection === 'regular') {
             regular.push(currentMember as TeamMember)
           }
         }
@@ -92,14 +84,12 @@ export const useTeamMembers = () => {
     
     // 添加最后一个成员
     if (currentMember && currentMember.name) {
-      if (currentSection === 'genesis') {
-        genesis.push(currentMember as TeamMember)
-      } else {
+      if (currentSection === 'regular') {
         regular.push(currentMember as TeamMember)
       }
     }
     
-    return { genesis, regular }
+    return regular
   }
 
   const loadTeamMembers = async () => {
@@ -112,9 +102,7 @@ export const useTeamMembers = () => {
       }
       
       const markdown = await response.text()
-      const { genesis, regular } = parseMarkdown(markdown)
-      genesisTeam.value = genesis
-      teamMembers.value = regular
+      teamMembers.value = parseMarkdown(markdown)
       
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Unknown error'
@@ -129,7 +117,6 @@ export const useTeamMembers = () => {
   })
 
   return {
-    genesisTeam,
     teamMembers,
     loading,
     error,
