@@ -62,12 +62,28 @@
 
 @media (max-width: 768px) {
   .contact-section {
-    padding: 2rem 50px;
+    padding: 2rem 1rem;
+    min-height: auto;
+  }
+
+  .contact-header {
+    margin-bottom: 2rem;
+  }
+
+  .contact-title {
+    font-size: 1.875rem;
+    margin-bottom: 1rem;
   }
   
   .contact-image {
-    width: 95vw;
-    height: calc(95vw * 428 / 1000);
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 200px;
+  }
+
+  .contact-image img {
+    object-fit: contain;
   }
 }
 </style>

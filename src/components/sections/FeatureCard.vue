@@ -154,16 +154,58 @@ const getIconPath = (number: string | number) => {
 
 @media (max-width: 768px) {
   .feature-card {
-    height: 360px;
+    width: 100%;
     max-width: 100%;
+    height: auto;
+    min-height: 300px;
+    padding: 1.5rem;
+  }
+
+  .title-section {
+    top: 1rem;
+    left: 1.5rem;
+    right: 4rem;
+  }
+
+  .feature-number {
+    padding: 1rem 1rem 1rem 1rem;
+    font-size: 1.125rem;
   }
   
   .feature-title {
-    @apply text-lg;
+    font-size: 1.125rem;
+    line-height: 1.4;
   }
   
   .feature-description {
-    font-size: 14px;
+    font-size: 0.875rem;
+    margin-top: 3.5rem;
+    line-height: 1.5;
+  }
+
+  .feature-icon {
+    padding: 1rem;
+  }
+
+  .feature-icon img {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .feature-card {
+    padding: 1.25rem;
+    min-height: 280px;
+  }
+
+  .feature-title {
+    font-size: 1rem;
+  }
+
+  .feature-description {
+    font-size: 0.8125rem;
+    margin-top: 3rem;
   }
 }
 </style>

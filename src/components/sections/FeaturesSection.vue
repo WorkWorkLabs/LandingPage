@@ -1,9 +1,6 @@
 <template>
   <section id="features" class="features-section">
-    <div
-      class="container mx-auto"
-      style="padding-left: 100px; padding-right: 100px"
-    >
+    <div class="container mx-auto features-container">
       <div class="section-header">
         <h2 class="section-title">What we are doing</h2>
         <p class="section-description">
@@ -55,6 +52,11 @@ const { features } = storeToRefs(contentStore);
   @apply text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed;
 }
 
+.features-container {
+  padding-left: 100px;
+  padding-right: 100px;
+}
+
 .features-grid {
   display: grid;
   grid-template-columns: repeat(3, 295px);
@@ -70,9 +72,34 @@ const { features } = storeToRefs(contentStore);
 }
 
 @media (max-width: 768px) {
+  .features-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .features-section {
+    padding: 2rem 0;
+    min-height: auto;
+  }
+
+  .section-header {
+    margin-bottom: 2rem;
+  }
+
+  .section-title {
+    font-size: 1.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .section-description {
+    font-size: 1rem;
+    padding: 0 1rem;
+  }
+
   .features-grid {
-    grid-template-columns: 295px;
-    gap: 40px;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    max-width: 100%;
   }
 }
 

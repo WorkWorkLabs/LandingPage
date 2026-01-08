@@ -237,25 +237,59 @@
 
 @media (max-width: 768px) {
   .app-footer {
-    padding: 30px 50px 0 50px; /* 移动端也去掉底部padding */
+    padding: 2rem 1rem 0 1rem;
   }
 
   .footer-content {
     flex-direction: column;
-    gap: 30px;
+    gap: 2rem;
+    align-items: center;
+    text-align: center;
+  }
+
+  .footer-left {
+    width: 100%;
+    align-items: center;
   }
 
   .footer-right {
-    align-items: flex-start;
+    align-items: center;
+    width: 100%;
   }
 
   .footer-nav {
     flex-wrap: wrap;
-    gap: 15px;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+
+  .nav-separator {
+    display: none;
   }
 
   .footer-mascot {
-    justify-content: flex-start;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .mascot-image {
+    width: 120px;
+    height: 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-footer {
+    padding: 1.5rem 0.75rem 0 0.75rem;
+  }
+
+  .footer-nav {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .nav-link {
+    font-size: 0.875rem;
   }
 }
 </style>

@@ -48,7 +48,7 @@ onMounted(() => {
 <style scoped>
 .community-stats-section {
   @apply bg-white;
-  height: 576px;
+  min-height: 576px;
   display: flex;
   align-items: center;
   padding: 2rem 100px;
@@ -131,20 +131,47 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .stats-grid {
-    @apply flex-col gap-8;
+  .community-stats-section {
+    padding: 2rem 1rem;
+    min-height: auto;
   }
-  
-  .stat-number {
-    @apply text-4xl;
+
+  .section-header {
+    margin-bottom: 2rem;
   }
-  
+
   .section-title {
-    @apply text-3xl;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    text-align: center;
   }
   
   .section-description {
-    @apply text-lg;
+    font-size: 0.875rem;
+    text-align: center;
+    padding: 0 0.5rem;
+  }
+
+  .stats-section {
+    text-align: center;
+  }
+
+  .stats-title {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+  }
+
+  .stats-grid {
+    @apply flex-col gap-6;
+    align-items: center;
+  }
+  
+  .stat-number {
+    font-size: 1.875rem;
+  }
+
+  .stat-label {
+    font-size: 1rem;
   }
 }
 </style>

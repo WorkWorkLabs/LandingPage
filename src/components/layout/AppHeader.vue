@@ -185,6 +185,22 @@ onUnmounted(() => {
   @apply text-gray-600 hover:text-primary px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200;
 }
 
+@media (max-width: 768px) {
+  .app-header {
+    padding: 0 1rem;
+  }
+
+  .nav-link {
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .nav-link.contact-button {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+}
+
 .nav-link.active {
   @apply text-primary;
 }

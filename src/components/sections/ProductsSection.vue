@@ -205,9 +205,45 @@ const openLink = (productId: string) => {
 }
 
 @media (max-width: 768px) {
+  .products-section {
+    padding: 2rem 0;
+    min-height: auto;
+  }
+
+  .section-header {
+    margin-bottom: 2rem;
+    padding: 0 1rem;
+  }
+
+  .section-title {
+    font-size: 1.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .section-description {
+    font-size: 1rem;
+  }
+
   .carousel-container {
-    width: 95vw;
-    height: calc(95vw * 500 / 1000);
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 300px;
+    margin: 1rem auto;
+    padding: 0 1rem;
+  }
+
+  .carousel-track {
+    height: auto;
+  }
+
+  .product-slide {
+    height: auto;
+    min-height: 300px;
+  }
+
+  .product-slide img {
+    object-fit: contain;
   }
 }
 

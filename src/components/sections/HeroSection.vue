@@ -224,40 +224,68 @@ onUnmounted(() => {
 
 /* 响应式调整 */
 @media (max-width: 768px) {
+  .hero-section {
+    height: calc(100vh - 64px);
+    min-height: 500px;
+    background-size: cover;
+    background-position: center;
+  }
+
   .hero-main-container {
-    gap: 24px;
-    padding: 0 16px;
+    gap: 1.5rem;
+    padding: 0 1rem;
+    transform: translateY(-5vh);
   }
 
   .hero-title {
-    font-size: 32px;
+    font-size: 2rem;
+    line-height: 1.2;
   }
 
   .hero-description {
-    font-size: 18px;
+    font-size: 1rem;
+    padding: 0 0.5rem;
+    line-height: 1.5;
   }
 
   .button-group {
-    gap: 12px;
+    gap: 0.75rem;
     flex-direction: column;
     width: 100%;
+    align-items: center;
   }
 
   .join-button.primary,
   .docs-button.secondary {
-    padding: 10px 28px;
-    font-size: 20px;
-    width: 200px;
-    max-width: 90%;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    width: 100%;
+    max-width: 280px;
   }
 
   .docs-button.secondary {
-    font-weight: 400; /* 移动端更轻的字重 */
+    font-weight: 400;
   }
 
   .join-button.primary:hover,
   .docs-button.secondary:hover {
     transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-title {
+    font-size: 1.75rem;
+  }
+
+  .hero-description {
+    font-size: 0.875rem;
+  }
+
+  .join-button.primary,
+  .docs-button.secondary {
+    font-size: 0.875rem;
+    padding: 0.625rem 1.25rem;
   }
 }
 
