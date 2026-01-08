@@ -182,13 +182,13 @@ export const useContentStore = defineStore("content", () => {
     {
       id: "1",
       number: "1000+",
-      label: "Github Community",
+      label: "GitHub Stars",
       icon: "/images/github-icon.png",
     },
     {
       id: "2",
-      number: "3200",
-      label: "Stars telegram",
+      number: "3500",
+      label: "Telegram Community",
       icon: "/images/tg-icon.png",
     },
   ]);
