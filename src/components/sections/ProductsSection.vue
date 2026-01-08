@@ -7,22 +7,22 @@
           WorkWork connect users with socially meaningful opportunities
         </p>
         
-        <div class="carousel-container" v-if="products.length > 0">
+        <div class="carousel-container" v-if="displayedProducts.length > 0">
           <div 
             class="carousel-track" 
             :style="{ 
-              transform: `translateX(-${currentIndex * (100 / products.length)}%)`,
-              width: `${products.length * 100}%`
+              transform: `translateX(-${currentIndex * (100 / displayedProducts.length)}%)`,
+              width: `${displayedProducts.length * 100}%`
             }"
           >
             <div 
-              v-for="product in products" 
+              v-for="product in displayedProducts" 
               :key="product.id"
               class="product-slide"
-              :style="{ width: `${100 / products.length}%` }"
+              :style="{ width: `${100 / displayedProducts.length}%` }"
             >
               <img 
-                :src="product.image || '/images/placeholder.svg'" 
+                :src="product.image || '/images/placeholder.svg'"
                 :alt="product.title"
                 @click="openLink(product.id)"
                 class="clickable-image"
@@ -33,11 +33,11 @@
         
         <!-- 指示条 - 只有多于1张图片时才显示 -->
         <div 
-          v-if="products.length > 1" 
+          v-if="displayedProducts.length > 1" 
           class="carousel-indicators"
         >
           <button
-            v-for="(product, index) in products"
+            v-for="(product, index) in displayedProducts"
             :key="product.id"
             :class="['indicator', { active: currentIndex === index }]"
             @click="goToSlide(index)"
@@ -57,11 +57,28 @@ import { useContentStore } from '@/stores/content'
 const contentStore = useContentStore()
 const { products } = storeToRefs(contentStore)
 
+// #region agent log
+const logDataA = {location:'ProductsSection.vue:58',message:'Products data loaded',data:{productsCount:products.value.length,products:products.value.map((p:any)=>({id:p.id,title:p.title}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+console.log('[DEBUG]', logDataA);
+fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataA)}).catch(()=>{});
+// #endregion
+
+// 只显示前两个产品
+const displayedProducts = computed(() => {
+  const result = products.value.slice(0, 2);
+  // #region agent log
+  const logDataA2 = {location:'ProductsSection.vue:65',message:'displayedProducts computed',data:{displayedCount:result.length,displayedIds:result.map((p:any)=>p.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+  console.log('[DEBUG]', logDataA2);
+  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataA2)}).catch(()=>{});
+  // #endregion
+  return result;
+})
+
 const currentIndex = ref(0)
-let intervalId: number | null = null
+let intervalId: ReturnType<typeof setInterval> | null = null
 
 // 动态计算总张数
-const totalSlides = computed(() => products.value.length)
+const totalSlides = computed(() => displayedProducts.value.length)
 
 const nextSlide = () => {
   if (totalSlides.value > 1) {
@@ -96,6 +113,11 @@ const stopAutoPlay = () => {
 }
 
 onMounted(() => {
+  // #region agent log
+  const logDataA3 = {location:'ProductsSection.vue:113',message:'ProductsSection mounted',data:{displayedProductsCount:displayedProducts.value.length,totalSlides:totalSlides.value},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
+  console.log('[DEBUG]', logDataA3);
+  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataA3)}).catch(()=>{});
+  // #endregion
   startAutoPlay()
 })
 

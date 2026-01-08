@@ -49,6 +49,15 @@ import { useTeamMembers } from "@/composables/useTeamMembers";
 import TeamMemberCard from "./TeamMemberCard.vue";
 
 const { teamMembers, loading, error } = useTeamMembers();
+
+// #region agent log
+import { watch } from 'vue';
+watch([teamMembers, loading, error], ([members, isLoading, err]) => {
+  const logDataB = {location:'TeamSection.vue:53',message:'TeamSection state changed',data:{teamMembersCount:members.length,loading:isLoading,error:err,memberIds:members.map((m:any)=>m.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+  console.log('[DEBUG]', logDataB);
+  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataB)}).catch(()=>{});
+}, { immediate: true });
+// #endregion
 </script>
 
 <style scoped>

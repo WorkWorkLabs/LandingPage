@@ -69,6 +69,15 @@ import { useContentStore } from "@/stores/content";
 const contentStore = useContentStore();
 const { hero } = storeToRefs(contentStore);
 
+// #region agent log
+import { onMounted as onMountedHero } from "vue";
+onMountedHero(() => {
+  const logDataD = {location:'HeroSection.vue:71',message:'HeroSection mounted',data:{title:hero.value.title,subtitle:hero.value.subtitle,description:hero.value.description.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'};
+  console.log('[DEBUG]', logDataD);
+  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataD)}).catch(()=>{});
+});
+// #endregion
+
 // Dog color animation on scroll
 const animateDogColor = () => {
   const dogElement = document.getElementById("workwork-dog");

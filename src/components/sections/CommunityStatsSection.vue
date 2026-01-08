@@ -34,6 +34,15 @@ import { useContentStore } from '@/stores/content'
 
 const contentStore = useContentStore()
 const { stats } = storeToRefs(contentStore)
+
+// #region agent log
+import { onMounted } from 'vue';
+onMounted(() => {
+  const logDataC = {location:'CommunityStatsSection.vue:38',message:'CommunityStatsSection mounted',data:{statsCount:stats.value.length,stats:stats.value.map((s:any)=>({id:s.id,label:s.label,number:s.number}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+  console.log('[DEBUG]', logDataC);
+  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataC)}).catch(()=>{});
+});
+// #endregion
 </script>
 
 <style scoped>

@@ -95,6 +95,11 @@ export const useTeamMembers = () => {
   const loadTeamMembers = async () => {
     try {
       loading.value = true
+      // #region agent log
+      const logDataB1 = {location:'useTeamMembers.ts:97',message:'Loading team members started',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+      console.log('[DEBUG]', logDataB1);
+      fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataB1)}).catch(()=>{});
+      // #endregion
       const response = await fetch('/team-members.md')
       
       if (!response.ok) {
@@ -102,10 +107,26 @@ export const useTeamMembers = () => {
       }
       
       const markdown = await response.text()
-      teamMembers.value = parseMarkdown(markdown)
+      // #region agent log
+      const logDataB2 = {location:'useTeamMembers.ts:106',message:'Markdown loaded',data:{markdownLength:markdown.length,firstLines:markdown.split('\n').slice(0,5)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+      console.log('[DEBUG]', logDataB2);
+      fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataB2)}).catch(()=>{});
+      // #endregion
+      const parsed = parseMarkdown(markdown)
+      teamMembers.value = parsed
+      // #region agent log
+      const logDataB3 = {location:'useTeamMembers.ts:109',message:'Team members parsed',data:{count:parsed.length,memberNames:parsed.map((m:any)=>m.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+      console.log('[DEBUG]', logDataB3);
+      fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataB3)}).catch(()=>{});
+      // #endregion
       
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Unknown error'
+      // #region agent log
+      const logDataB4 = {location:'useTeamMembers.ts:111',message:'Error loading team members',data:{error:error.value},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+      console.log('[DEBUG]', logDataB4);
+      fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataB4)}).catch(()=>{});
+      // #endregion
       console.error('Error loading team members:', err)
     } finally {
       loading.value = false
