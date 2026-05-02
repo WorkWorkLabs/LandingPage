@@ -1,135 +1,50 @@
+<script setup lang="ts">
+import { storeToRefs } from 'pinia'
+import { useContentStore } from '@/stores/content'
+import { useIntersectionObserver } from '@/composables/useIntersectionObserver'
+import FeatureCard from './FeatureCard.vue'
+
+const contentStore = useContentStore()
+const { features } = storeToRefs(contentStore)
+
+const { sectionRef, isVisible } = useIntersectionObserver()
+</script>
+
 <template>
-  <section id="features" class="features-section">
-    <div class="container mx-auto features-container">
-      <div class="section-header">
-        <h2 class="section-title">What we are doing</h2>
-        <p class="section-description">
-          WorkWork is building a global remote work ecosystem for digital
-          nomads, remote workers, freelancers, and super individuals.
+  <section
+    id="features"
+    ref="sectionRef"
+    class="relative py-24 bg-background overflow-hidden"
+  >
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent" />
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div
+        :class="[
+          'text-center mb-16 transition-all duration-700',
+          isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+        ]"
+      >
+        <span class="inline-block px-4 py-1.5 mb-4 text-sm font-medium text-primary bg-primary/10 rounded-full border border-primary/20">
+          {{ features.badge }}
+        </span>
+        <h2 class="text-4xl sm:text-5xl font-bold text-default-900 mb-4">
+          {{ features.title }}
+        </h2>
+        <p class="text-xl text-default-500 max-w-2xl mx-auto">
+          {{ features.subtitle }}
         </p>
       </div>
 
-      <div class="features-grid">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <FeatureCard
-          v-for="(feature, index) in features"
-          :key="feature.id"
+          v-for="(feature, index) in features.items"
+          :key="feature.title"
           :feature="feature"
           :index="index"
-          class="feature-item"
+          :is-visible="isVisible"
         />
       </div>
     </div>
   </section>
 </template>
-
-<script setup lang="ts">
-import { storeToRefs } from "pinia";
-import FeatureCard from "@/components/sections/FeatureCard.vue";
-import { useContentStore } from "@/stores/content";
-
-const contentStore = useContentStore();
-const { features } = storeToRefs(contentStore);
-</script>
-
-<style scoped>
-.features-section {
-  @apply bg-gray-50;
-  min-height: calc(100vh - 65px);
-  display: flex;
-  align-items: center;
-  padding: 2rem 0;
-}
-
-.section-header {
-  @apply text-center mb-16;
-}
-
-.section-title {
-  @apply text-4xl md:text-5xl font-bold text-primary mb-6;
-}
-
-.section-description {
-  @apply text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed;
-}
-
-.features-container {
-  padding-left: 100px;
-  padding-right: 100px;
-}
-
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 295px);
-  gap: 57px;
-  justify-content: center;
-}
-
-/* 响应式调整 */
-@media (max-width: 1200px) {
-  .features-grid {
-    grid-template-columns: repeat(2, 295px);
-  }
-}
-
-@media (max-width: 768px) {
-  .features-container {
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
-
-  .features-section {
-    padding: 2rem 0;
-    min-height: auto;
-  }
-
-  .section-header {
-    margin-bottom: 2rem;
-  }
-
-  .section-title {
-    font-size: 1.875rem;
-    margin-bottom: 1rem;
-  }
-
-  .section-description {
-    font-size: 1rem;
-    padding: 0 1rem;
-  }
-
-  .features-grid {
-    grid-template-columns: 1fr;
-    gap: 2rem;
-    max-width: 100%;
-  }
-}
-
-.feature-item {
-  animation: fadeInUp 0.6s ease-out forwards;
-  animation-delay: calc(var(--animation-order) * 0.1s);
-}
-
-.feature-item:nth-child(1) {
-  --animation-order: 1;
-}
-.feature-item:nth-child(2) {
-  --animation-order: 2;
-}
-.feature-item:nth-child(3) {
-  --animation-order: 3;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.text-primary {
-  color: #00a1ff;
-}
-</style>

@@ -1,4 +1,3 @@
-// 基础界面元素类型
 export interface ButtonProps {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
@@ -6,7 +5,6 @@ export interface ButtonProps {
   loading?: boolean
 }
 
-// 导航相关类型
 export interface NavItem {
   id: string
   label: string
@@ -14,25 +12,26 @@ export interface NavItem {
   external?: boolean
 }
 
-// 特性展示类型
 export interface Feature {
-  id: string
-  number: string
+  id?: string
+  number?: string
   title: string
   description: string
   icon?: string
+  color?: string
 }
 
-// 产品类型
 export interface Product {
-  id: string
+  id?: string
   title: string
   subtitle?: string
   description: string
-  features: ProductFeature[]
-  link: string
+  features?: ProductFeature[]
+  link?: string
   tags?: string[]
   image?: string
+  icon?: string
+  cta?: { text: string; href: string }
 }
 
 export interface ProductFeature {
@@ -41,14 +40,18 @@ export interface ProductFeature {
   highlight?: boolean
 }
 
-// 团队成员类型
 export interface TeamMember {
   id: string
   name: string
-  title: string
+  title?: string
+  role?: string
   avatar?: string
   bio?: string
-  social?: SocialLink[]
+  social?: {
+    linkedin?: string
+    twitter?: string
+    github?: string
+  }
 }
 
 export interface SocialLink {
@@ -56,7 +59,6 @@ export interface SocialLink {
   url: string
 }
 
-// 统计数据类型
 export interface Stat {
   id: string
   number: string
@@ -64,7 +66,6 @@ export interface Stat {
   icon?: string
 }
 
-// 表单类型
 export interface NewsletterForm {
   email: string
 }
@@ -76,14 +77,12 @@ export interface ContactForm {
   message: string
 }
 
-// 评价/评论类型
 export interface Review {
   id: string
   image: string
   alt: string
 }
 
-// 应用配置类型
 export interface AppConfig {
   title: string
   description: string
@@ -91,5 +90,4 @@ export interface AppConfig {
   social: SocialLink[]
 }
 
-// 响应式断点
 export type Breakpoint = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl'

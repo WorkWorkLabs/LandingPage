@@ -1,287 +1,151 @@
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useContentStore } from '@/stores/content'
+import { useIntersectionObserver } from '@/composables/useIntersectionObserver'
+
+const contentStore = useContentStore()
+const { products } = storeToRefs(contentStore)
+
+const { sectionRef, isVisible } = useIntersectionObserver()
+
+const currentIndex = ref(0)
+let intervalId: ReturnType<typeof setInterval> | null = null
+
+const nextSlide = () => {
+  currentIndex.value = (currentIndex.value + 1) % products.value.items.length
+}
+
+const prevSlide = () => {
+  currentIndex.value = currentIndex.value === 0 ? products.value.items.length - 1 : currentIndex.value - 1
+}
+
+const goToSlide = (index: number) => {
+  currentIndex.value = index
+  resetInterval()
+}
+
+const resetInterval = () => {
+  if (intervalId) clearInterval(intervalId)
+  intervalId = setInterval(nextSlide, 5000)
+}
+
+onMounted(() => {
+  intervalId = setInterval(nextSlide, 5000)
+})
+
+onUnmounted(() => {
+  if (intervalId) clearInterval(intervalId)
+})
+</script>
+
 <template>
-  <section id="products" class="products-section">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="section-header">
-        <h2 class="section-title">WorkWork Ecosystem</h2>
-        <p class="section-description">
-          WorkWork connect users with socially meaningful opportunities
+  <section
+    id="products"
+    ref="sectionRef"
+    class="relative py-24 bg-content1 overflow-hidden"
+  >
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-secondary/5 via-transparent to-transparent" />
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div
+        :class="[
+          'text-center mb-16 transition-all duration-700',
+          isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+        ]"
+      >
+        <span class="inline-block px-4 py-1.5 mb-4 text-sm font-medium text-secondary bg-secondary/10 rounded-full border border-secondary/20">
+          {{ products.badge }}
+        </span>
+        <h2 class="text-4xl sm:text-5xl font-bold text-default-900 mb-4">
+          {{ products.title }}
+        </h2>
+        <p class="text-xl text-default-500 max-w-2xl mx-auto">
+          {{ products.subtitle }}
         </p>
-        
-        <div class="carousel-container" v-if="displayedProducts.length > 0">
-          <div 
-            class="carousel-track" 
-            :style="{ 
-              transform: `translateX(-${currentIndex * (100 / displayedProducts.length)}%)`,
-              width: `${displayedProducts.length * 100}%`
-            }"
+      </div>
+
+      <div class="relative max-w-4xl mx-auto">
+        <div class="overflow-hidden rounded-2xl">
+          <div
+            class="flex transition-transform duration-500 ease-out"
+            :style="{ transform: `translateX(-${currentIndex * 100}%)` }"
           >
-            <div 
-              v-for="product in displayedProducts" 
-              :key="product.id"
-              class="product-slide"
-              :style="{ width: `${100 / displayedProducts.length}%` }"
+            <div
+              v-for="product in products.items"
+              :key="product.title"
+              class="w-full flex-shrink-0 px-4"
             >
-              <img 
-                :src="product.image || '/images/placeholder.svg'"
-                :alt="product.title"
-                @click="openLink(product.id)"
-                class="clickable-image"
-              />
+              <div class="bg-background rounded-2xl border border-default-200 p-8 sm:p-10 hover:shadow-lg transition-shadow duration-300">
+                <div class="flex flex-col sm:flex-row items-start gap-6">
+                  <div class="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center flex-shrink-0">
+                    <span class="text-2xl">{{ product.icon }}</span>
+                  </div>
+
+                  <div class="flex-1">
+                    <h3 class="text-2xl font-bold text-default-900 mb-3">
+                      {{ product.title }}
+                    </h3>
+                    <p class="text-default-500 mb-6 leading-relaxed">
+                      {{ product.description }}
+                    </p>
+                    <div class="flex flex-wrap gap-2 mb-6">
+                      <span
+                        v-for="tag in product.tags"
+                        :key="tag"
+                        class="px-3 py-1 text-xs font-medium text-primary bg-primary/10 rounded-full border border-primary/20"
+                      >
+                        {{ tag }}
+                      </span>
+                    </div>
+                    <a
+                      :href="product.cta.href"
+                      class="inline-flex items-center text-sm font-semibold text-primary hover:text-primary-600 transition-colors group"
+                    >
+                      {{ product.cta.text }}
+                      <svg class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </a>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-        
-        <!-- 指示条 - 只有多于1张图片时才显示 -->
-        <div 
-          v-if="displayedProducts.length > 1" 
-          class="carousel-indicators"
-        >
+
+        <div class="flex items-center justify-center gap-4 mt-8">
           <button
-            v-for="(product, index) in displayedProducts"
-            :key="product.id"
-            :class="['indicator', { active: currentIndex === index }]"
-            @click="goToSlide(index)"
-            :aria-label="`Go to ${product.title}`"
-          ></button>
+            class="p-2 rounded-full bg-content2 hover:bg-default-200 transition-colors border border-default-200"
+            @click="prevSlide(); resetInterval()"
+          >
+            <svg class="w-5 h-5 text-default-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+
+          <div class="flex gap-2">
+            <button
+              v-for="(_, index) in products.items"
+              :key="index"
+              :class="[
+                'w-2.5 h-2.5 rounded-full transition-all duration-300',
+                currentIndex === index ? 'bg-primary w-8' : 'bg-default-300 hover:bg-default-400'
+              ]"
+              @click="goToSlide(index)"
+            />
+          </div>
+
+          <button
+            class="p-2 rounded-full bg-content2 hover:bg-default-200 transition-colors border border-default-200"
+            @click="nextSlide(); resetInterval()"
+          >
+            <svg class="w-5 h-5 text-default-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
   </section>
 </template>
-
-<script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { storeToRefs } from 'pinia'
-import { useContentStore } from '@/stores/content'
-
-const contentStore = useContentStore()
-const { products } = storeToRefs(contentStore)
-
-// #region agent log
-const logDataA = {location:'ProductsSection.vue:58',message:'Products data loaded',data:{productsCount:products.value.length,products:products.value.map((p:any)=>({id:p.id,title:p.title}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
-console.log('[DEBUG]', logDataA);
-fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataA)}).catch(()=>{});
-// #endregion
-
-// 只显示前两个产品
-const displayedProducts = computed(() => {
-  const result = products.value.slice(0, 2);
-  // #region agent log
-  const logDataA2 = {location:'ProductsSection.vue:65',message:'displayedProducts computed',data:{displayedCount:result.length,displayedIds:result.map((p:any)=>p.id)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
-  console.log('[DEBUG]', logDataA2);
-  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataA2)}).catch(()=>{});
-  // #endregion
-  return result;
-})
-
-const currentIndex = ref(0)
-let intervalId: ReturnType<typeof setInterval> | null = null
-
-// 动态计算总张数
-const totalSlides = computed(() => displayedProducts.value.length)
-
-const nextSlide = () => {
-  if (totalSlides.value > 1) {
-    currentIndex.value = (currentIndex.value + 1) % totalSlides.value
-  }
-}
-
-const goToSlide = (index: number) => {
-  currentIndex.value = index
-  // 重置自动轮播
-  if (intervalId) {
-    clearInterval(intervalId)
-  }
-  // 只有多于1张图片时才自动轮播
-  if (totalSlides.value > 1) {
-    intervalId = setInterval(nextSlide, 3000)
-  }
-}
-
-const startAutoPlay = () => {
-  // 只有多于1张图片时才启动自动轮播
-  if (totalSlides.value > 1) {
-    intervalId = setInterval(nextSlide, 3000)
-  }
-}
-
-const stopAutoPlay = () => {
-  if (intervalId) {
-    clearInterval(intervalId)
-    intervalId = null
-  }
-}
-
-onMounted(() => {
-  // #region agent log
-  const logDataA3 = {location:'ProductsSection.vue:113',message:'ProductsSection mounted',data:{displayedProductsCount:displayedProducts.value.length,totalSlides:totalSlides.value},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
-  console.log('[DEBUG]', logDataA3);
-  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataA3)}).catch(()=>{});
-  // #endregion
-  startAutoPlay()
-})
-
-onUnmounted(() => {
-  stopAutoPlay()
-})
-
-const openLink = (productId: string) => {
-  const linkMap: Record<string, string> = {
-    '1': 'https://google.com',
-    '2': 'https://workwork.works', 
-    '3': 'https://yahoo.com',
-    '4': 'https://workwork.works'
-  }
-  
-  const url = linkMap[productId]
-  if (url) {
-    window.open(url, '_blank')
-  }
-}
-</script>
-
-<style scoped>
-.products-section {
-  @apply bg-white;
-  min-height: calc(100vh - 70px);
-  display: flex;
-  align-items: center;
-  padding: 2rem 0;
-}
-
-.section-header {
-  @apply text-center mb-16;
-}
-
-.section-title {
-  @apply text-4xl md:text-5xl font-bold text-primary mb-6;
-}
-
-.clickable-image {
-  cursor: pointer;
-  transition: opacity 0.3s ease;
-}
-
-.clickable-image:hover {
-  opacity: 0.8;
-}
-
-.section-description {
-  @apply text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed;
-}
-
-.carousel-container {
-  width: 1000px;
-  height: 500px;
-  margin: 32px auto;
-  overflow: hidden;
-}
-
-.carousel-track {
-  display: flex;
-  height: 100%;
-  transition: transform 0.5s ease-in-out;
-}
-
-.product-slide {
-  height: 100%;
-  flex-shrink: 0;
-}
-
-.product-slide img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-
-@media (max-width: 1024px) {
-  .carousel-container {
-    width: 90vw;
-    max-width: 1000px;
-    height: calc(90vw * 500 / 1000);
-    max-height: 500px;
-  }
-}
-
-@media (max-width: 768px) {
-  .products-section {
-    padding: 2rem 0;
-    min-height: auto;
-  }
-
-  .section-header {
-    margin-bottom: 2rem;
-    padding: 0 1rem;
-  }
-
-  .section-title {
-    font-size: 1.875rem;
-    margin-bottom: 1rem;
-  }
-
-  .section-description {
-    font-size: 1rem;
-  }
-
-  .carousel-container {
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-    min-height: 300px;
-    margin: 1rem auto;
-    padding: 0 1rem;
-  }
-
-  .carousel-track {
-    height: auto;
-  }
-
-  .product-slide {
-    height: auto;
-    min-height: 300px;
-  }
-
-  .product-slide img {
-    object-fit: contain;
-  }
-}
-
-/* 指示条样式 */
-.carousel-indicators {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: none;
-  background-color: #d1d5db;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  padding: 0;
-}
-
-.indicator:hover {
-  background-color: #9ca3af;
-  transform: scale(1.1);
-}
-
-.indicator.active {
-  background-color: #00A1FF;
-  transform: scale(1.2);
-}
-
-.indicator:focus {
-  outline: 2px solid #00A1FF;
-  outline-offset: 2px;
-}
-
-.text-primary {
-  color: #00A1FF;
-}
-</style>

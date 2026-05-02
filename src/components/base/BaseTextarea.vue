@@ -3,24 +3,24 @@ import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   modelValue: string
-  type?: string
   label?: string
   placeholder?: string
   error?: string
   disabled?: boolean
   required?: boolean
+  rows?: number
 }>(), {
-  type: 'text',
   disabled: false,
-  required: false
+  required: false,
+  rows: 4
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const inputClasses = computed(() => {
-  const base = 'w-full px-4 py-3 bg-background border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all'
+const textareaClasses = computed(() => {
+  const base = 'w-full px-4 py-3 bg-background border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all resize-none'
 
   return [
     base,
@@ -36,13 +36,13 @@ const inputClasses = computed(() => {
       {{ label }}
       <span v-if="required" class="text-danger">*</span>
     </label>
-    <input
-      :type="type"
+    <textarea
       :value="modelValue"
       :placeholder="placeholder"
       :disabled="disabled"
-      :class="inputClasses"
-      @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+      :rows="rows"
+      :class="textareaClasses"
+      @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
     />
     <p v-if="error" class="mt-1.5 text-sm text-danger">
       {{ error }}

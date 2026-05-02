@@ -1,211 +1,69 @@
-<template>
-  <section id="testimonials" class="testimonial-section">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="testimonial-content">
-        <h3 class="testimonial-title">Digital Nomads' Reviews</h3>
-        <p class="testimonial-intro">
-          Work Work has won recognition from more and more digital nomads and
-          nomadic communities by continuously building and improving the digital
-          foundation of a global collaborative community.
-        </p>
+<script setup lang="ts">
+import { storeToRefs } from 'pinia'
+import { useContentStore } from '@/stores/content'
+import { useIntersectionObserver } from '@/composables/useIntersectionObserver'
 
-        <div class="carousel-container" v-if="reviews.length > 0">
-          <div
-            class="carousel-track"
-            :style="{ 
-              transform: `translateX(-${currentIndex * (100 / reviews.length)}%)`,
-              width: `${reviews.length * 100}%`
-            }"
-          >
-            <div 
-              v-for="review in reviews"
-              :key="review.id"
-              class="review-slide"
-              :style="{ width: `${100 / reviews.length}%` }"
-            >
-              <img :src="review.image" :alt="review.alt" />
+const contentStore = useContentStore()
+const { testimonial } = storeToRefs(contentStore)
+
+const { sectionRef, isVisible } = useIntersectionObserver()
+</script>
+
+<template>
+  <section
+    ref="sectionRef"
+    class="relative py-24 bg-background overflow-hidden"
+  >
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent" />
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div
+        :class="[
+          'text-center mb-16 transition-all duration-700',
+          isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+        ]"
+      >
+        <span class="inline-block px-4 py-1.5 mb-4 text-sm font-medium text-primary bg-primary/10 rounded-full border border-primary/20">
+          {{ testimonial.badge }}
+        </span>
+        <h2 class="text-4xl sm:text-5xl font-bold text-default-900 mb-4">
+          {{ testimonial.title }}
+        </h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div
+          v-for="(item, index) in testimonial.items"
+          :key="item.name"
+          :class="[
+            'group p-6 bg-content1 rounded-2xl border border-default-200 hover:shadow-lg transition-all duration-500 hover:-translate-y-1',
+            isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+          ]"
+          :style="{ transitionDelay: `${index * 100}ms` }"
+        >
+          <div class="flex items-center gap-1 mb-4">
+            <span
+              v-for="star in 5"
+              :key="star"
+              class="text-warning text-sm"
+            >★</span>
+          </div>
+
+          <p class="text-default-600 mb-6 leading-relaxed italic">
+            "{{ item.quote }}"
+          </p>
+
+          <div class="flex items-center gap-3 pt-4 border-t border-default-100">
+            <div class="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-semibold text-sm">
+              {{ item.name.charAt(0) }}
+            </div>
+            <div>
+              <div class="font-semibold text-default-900 text-sm">{{ item.name }}</div>
+              <div class="text-xs text-default-500">{{ item.role }}</div>
             </div>
           </div>
-        </div>
-        
-        <!-- 指示条 - 只有多于1张图片时才显示 -->
-        <div 
-          v-if="reviews.length > 1"
-          class="carousel-indicators"
-        >
-          <button
-            v-for="(review, index) in reviews"
-            :key="review.id"
-            :class="['indicator', { active: currentIndex === index }]"
-            @click="goToSlide(index)"
-            :aria-label="`Go to review ${index + 1}`"
-          ></button>
         </div>
       </div>
     </div>
   </section>
 </template>
-
-<script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from "vue";
-import { storeToRefs } from 'pinia'
-import { useContentStore } from '@/stores/content'
-
-const contentStore = useContentStore()
-const { reviews } = storeToRefs(contentStore)
-
-const currentIndex = ref(0);
-let intervalId: number | null = null;
-
-// 动态计算总张数
-const totalSlides = computed(() => reviews.value.length)
-
-const nextSlide = () => {
-  if (totalSlides.value > 1) {
-    currentIndex.value = (currentIndex.value + 1) % totalSlides.value;
-  }
-};
-
-const goToSlide = (index: number) => {
-  currentIndex.value = index;
-  // 重置自动轮播
-  if (intervalId) {
-    clearInterval(intervalId);
-  }
-  // 只有多于1张图片时才自动轮播
-  if (totalSlides.value > 1) {
-    intervalId = setInterval(nextSlide, 3000);
-  }
-};
-
-const startAutoPlay = () => {
-  // 只有多于1张图片时才启动自动轮播
-  if (totalSlides.value > 1) {
-    intervalId = setInterval(nextSlide, 3000);
-  }
-}
-
-const stopAutoPlay = () => {
-  if (intervalId) {
-    clearInterval(intervalId);
-    intervalId = null;
-  }
-}
-
-onMounted(() => {
-  startAutoPlay();
-});
-
-onUnmounted(() => {
-  stopAutoPlay();
-});
-</script>
-
-<style scoped>
-.testimonial-section {
-  @apply bg-white;
-  min-height: calc(100vh - 70px);
-  display: flex;
-  align-items: center;
-  padding: 4rem 0;
-}
-
-.testimonial-content {
-  @apply max-w-4xl mx-auto;
-}
-
-.testimonial-title {
-  @apply text-3xl font-bold text-primary text-center mb-6;
-}
-
-.testimonial-intro {
-  @apply text-lg text-gray-600 text-center mb-12 leading-relaxed;
-}
-
-.carousel-container {
-  width: 1000px;
-  height: 296px;
-  margin: 0 auto;
-  overflow: hidden;
-}
-
-.carousel-track {
-  display: flex;
-  height: 100%;
-  transition: transform 0.5s ease-in-out;
-}
-
-.review-slide {
-  height: 100%;
-  flex-shrink: 0;
-}
-
-.review-slide img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-/* 指示条样式 */
-.carousel-indicators {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: none;
-  background-color: #d1d5db;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  padding: 0;
-}
-
-.indicator:hover {
-  background-color: #9ca3af;
-  transform: scale(1.1);
-}
-
-.indicator.active {
-  background-color: #00a1ff;
-  transform: scale(1.2);
-}
-
-.indicator:focus {
-  outline: 2px solid #00a1ff;
-  outline-offset: 2px;
-}
-
-.text-primary {
-  color: #00a1ff;
-}
-
-@media (max-width: 1024px) {
-  .carousel-container {
-    width: 90vw;
-    max-width: 1000px;
-    height: calc(90vw * 296 / 1000);
-    max-height: 296px;
-  }
-}
-
-@media (max-width: 768px) {
-  .testimonial-title {
-    @apply text-2xl;
-  }
-
-  .testimonial-intro {
-    @apply text-base;
-  }
-
-  .carousel-container {
-    width: 95vw;
-    height: calc(95vw * 296 / 1000);
-  }
-}
-</style>

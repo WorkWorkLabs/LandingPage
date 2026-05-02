@@ -1,177 +1,53 @@
-<template>
-  <section id="community-stats" class="community-stats-section">
-    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="section-header">
-        <h2 class="section-title">Community norms and development</h2>
-        <p class="section-description">
-          The WorkWork community brings together remote workers and independent individuals from around the world to create a free, flexible, and mutually supportive global home under the concept of "Work everywhere, Work anytime, WorkWork".
-        </p>
-      </div>
-
-      <div class="stats-section">
-        <h3 class="stats-title">Current community size</h3>
-        <div class="stats-grid">
-          <div
-            v-for="stat in stats"
-            :key="stat.id"
-            class="stat-item"
-          >
-            <div class="stat-icon">
-              <img :src="stat.icon" :alt="stat.label" />
-            </div>
-            <div class="stat-number">{{ stat.number }}</div>
-            <div class="stat-label">{{ stat.label }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-</template>
-
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { useContentStore } from '@/stores/content'
+import { useIntersectionObserver } from '@/composables/useIntersectionObserver'
+import StatsSection from './StatsSection.vue'
 
 const contentStore = useContentStore()
-const { stats } = storeToRefs(contentStore)
+const { communityStats } = storeToRefs(contentStore)
 
-// #region agent log
-import { onMounted } from 'vue';
-onMounted(() => {
-  const logDataC = {location:'CommunityStatsSection.vue:38',message:'CommunityStatsSection mounted',data:{statsCount:stats.value.length,stats:stats.value.map((s:any)=>({id:s.id,label:s.label,number:s.number}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
-  console.log('[DEBUG]', logDataC);
-  fetch('http://127.0.0.1:7242/ingest/353a4726-f634-4d1e-b9bb-65ed440c7233',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(logDataC)}).catch(()=>{});
-});
-// #endregion
+const { sectionRef, isVisible } = useIntersectionObserver()
 </script>
 
-<style scoped>
-.community-stats-section {
-  @apply bg-white;
-  min-height: 576px;
-  display: flex;
-  align-items: center;
-  padding: 2rem 100px;
-  background-image: url('/images/map.png');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  position: relative;
-}
+<template>
+  <section
+    id="community"
+    ref="sectionRef"
+    class="relative py-24 bg-gradient-to-br from-secondary via-secondary-light to-secondary overflow-hidden"
+  >
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/5 via-transparent to-transparent" />
 
-.section-header {
-  @apply text-center mb-16;
-}
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div
+        :class="[
+          'text-center mb-16 transition-all duration-700',
+          isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+        ]"
+      >
+        <span class="inline-block px-4 py-1.5 mb-4 text-sm font-medium text-white/90 bg-white/10 rounded-full border border-white/20">
+          {{ communityStats.badge }}
+        </span>
+        <h2 class="text-4xl sm:text-5xl font-bold text-white mb-4">
+          {{ communityStats.title }}
+        </h2>
+        <p class="text-xl text-white/70 max-w-2xl mx-auto">
+          {{ communityStats.subtitle }}
+        </p>
+        <a
+          href="https://t.me/WorkWorkWeb3"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-2 mt-8 px-8 py-3.5 text-base font-semibold text-white bg-white/15 backdrop-blur-sm rounded-full border border-white/25 hover:bg-white/25 hover:border-white/40 transition-all duration-200 hover:-translate-y-0.5"
+        >
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+          </svg>
+          Telegram Community
+        </a>
+      </div>
 
-.section-title {
-  font-family: 'Roboto', sans-serif;
-  font-weight: bold;
-  font-size: 36px;
-  color: #00A1FF;
-  margin-bottom: 1.5rem;
-}
-
-.section-description {
-  font-family: 'Roboto', sans-serif;
-  font-weight: 400;
-  font-size: 20px;
-  color: #6b7280;
-  max-width: 64rem;
-  line-height: 1.625;
-  text-align: left;
-}
-
-.stats-section {
-  @apply text-left;
-}
-
-.stats-title {
-  font-family: 'Roboto', sans-serif;
-  font-weight: bold;
-  font-size: 24px;
-  color: #00A1FF;
-  margin-bottom: 1.5rem;
-}
-
-.stats-grid {
-  @apply flex justify-start gap-16;
-}
-
-.stat-item {
-  @apply text-center;
-}
-
-.stat-icon {
-  margin-bottom: 0.5rem;
-}
-
-.stat-icon img {
-  width: 36px;
-  height: 36px;
-  margin: 0 auto;
-}
-
-.stat-number {
-  font-family: 'Roboto', sans-serif;
-  font-weight: bold;
-  font-size: 32px;
-  color: #00A1FF;
-  margin-bottom: 0.5rem;
-}
-
-.stat-label {
-  font-family: 'Roboto', sans-serif;
-  font-weight: 500;
-  font-size: 20px;
-  color: #6b7280;
-}
-
-.text-primary {
-  color: #00A1FF;
-}
-
-@media (max-width: 768px) {
-  .community-stats-section {
-    padding: 2rem 1rem;
-    min-height: auto;
-  }
-
-  .section-header {
-    margin-bottom: 2rem;
-  }
-
-  .section-title {
-    font-size: 1.5rem;
-    margin-bottom: 1rem;
-    text-align: center;
-  }
-  
-  .section-description {
-    font-size: 0.875rem;
-    text-align: center;
-    padding: 0 0.5rem;
-  }
-
-  .stats-section {
-    text-align: center;
-  }
-
-  .stats-title {
-    font-size: 1.25rem;
-    margin-bottom: 1rem;
-  }
-
-  .stats-grid {
-    @apply flex-col gap-6;
-    align-items: center;
-  }
-  
-  .stat-number {
-    font-size: 1.875rem;
-  }
-
-  .stat-label {
-    font-size: 1rem;
-  }
-}
-</style>
+      <StatsSection />
+    </div>
+  </section>
+</template>

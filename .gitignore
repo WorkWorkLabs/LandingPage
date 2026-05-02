@@ -61,4 +61,4 @@ coverage/
 
 # Temporary folders
 tmp/
-temp/
+temp/.DS_Store
