@@ -1,115 +1,207 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import AppLogo from './AppLogo.vue'
 
-const isMenuOpen = ref(false)
+const isDrawerOpen = ref(false)
 const scrolled = ref(false)
+const activeDropdown = ref<string | null>(null)
 
-const toggleMenu = () => {
-  isMenuOpen.value = !isMenuOpen.value
+const navItems = [
+  { label: '推荐', href: '#hero' },
+  {
+    label: '内容',
+    href: '#about',
+    children: [
+      { label: '远程工作', href: '#about' },
+      { label: '工具箱', href: '#toolbox' },
+      { label: '漫游指南', href: '#nomad-guide' },
+    ],
+  },
+  { label: '案例', href: '#articles' },
+  { label: '游民地图', href: '#nomad-map' },
+  { label: '关于 WorkWork', href: '#footer' },
+]
+
+const toggleDrawer = () => {
+  isDrawerOpen.value = !isDrawerOpen.value
+}
+
+const openDropdown = (label: string) => {
+  activeDropdown.value = label
+}
+
+const closeDropdown = () => {
+  activeDropdown.value = null
 }
 
 const handleScroll = () => {
-  scrolled.value = window.scrollY > 50
+  scrolled.value = window.scrollY > 8
 }
 
 onMounted(() => {
+  handleScroll()
   window.addEventListener('scroll', handleScroll)
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
 })
-
-const navItems = [
-  { label: '功能特性', href: '#features' },
-  { label: '产品服务', href: '#products' },
-  { label: '社区动态', href: '#community' },
-  { label: '联系我们', href: '#contact' },
-]
 </script>
 
 <template>
   <header
     :class="[
-      'fixed top-0 left-0 right-0 z-50 transition-all duration-300',
+      'fixed inset-x-0 top-0 z-50 h-16 border-b transition-all duration-300',
       scrolled
-        ? 'bg-white/80 backdrop-blur-xl shadow-[0_1px_0_rgba(0,0,0,0.06)] border-b border-default-200/50'
-        : 'bg-transparent'
+        ? 'border-black/6 bg-white/95 shadow-[0_8px_30px_rgba(26,26,26,0.06)] backdrop-blur-xl'
+        : 'border-transparent bg-white/85 backdrop-blur-md',
     ]"
   >
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-16">
-        <AppLogo />
-
-        <nav class="hidden md:flex items-center gap-1">
-          <a
-            v-for="item in navItems"
-            :key="item.href"
-            :href="item.href"
-            class="px-4 py-2 text-sm font-medium text-default-600 hover:text-primary transition-colors rounded-lg hover:bg-primary/5"
-          >
-            {{ item.label }}
-          </a>
-        </nav>
-
-        <div class="hidden md:flex items-center gap-2">
-          <a
-            href="#contact"
-            class="px-5 py-2 text-sm font-semibold text-white bg-primary rounded-full hover:bg-primary-600 transition-all duration-200 shadow-[0_2px_8px_rgba(0,161,255,0.3)] hover:shadow-[0_4px_16px_rgba(0,161,255,0.4)] hover:-translate-y-0.5"
-          >
-            免费试用
-          </a>
+    <div class="mx-auto flex h-full max-w-[1440px] items-center px-4 sm:px-6 lg:px-8">
+      <div class="flex w-full items-center">
+        <div class="hidden shrink-0 md:block md:w-[160px]">
+          <AppLogo />
         </div>
 
         <button
-          class="md:hidden p-2 text-default-600 hover:text-primary rounded-lg hover:bg-default-100 transition-colors"
-          @click="toggleMenu"
+          type="button"
+          class="inline-flex h-11 w-11 items-center justify-center rounded-full border border-black/8 text-[#1A1A1A] transition-colors hover:border-[#48A9DE] hover:text-[#48A9DE] md:hidden"
+          aria-label="打开菜单"
+          @click="toggleDrawer"
         >
           <svg
-            v-if="!isMenuOpen"
-            class="w-6 h-6"
+            v-if="!isDrawerOpen"
+            class="h-6 w-6"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7h16M4 12h16M4 17h16" />
           </svg>
           <svg
             v-else
-            class="w-6 h-6"
+            class="h-6 w-6"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M6 6l12 12M18 6 6 18" />
           </svg>
         </button>
-      </div>
 
-      <div
-        v-if="isMenuOpen"
-        class="md:hidden py-4 border-t border-default-200/50 bg-white/90 backdrop-blur-xl -mx-4 px-4"
-      >
-        <nav class="flex flex-col gap-1">
-          <a
-            v-for="item in navItems"
-            :key="item.href"
-            :href="item.href"
-            class="px-4 py-2.5 text-sm font-medium text-default-600 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors"
-            @click="isMenuOpen = false"
-          >
-            {{ item.label }}
-          </a>
-          <a
-            href="#contact"
-            class="mt-2 px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-full text-center hover:bg-primary-600 transition-colors"
-            @click="isMenuOpen = false"
-          >
-            免费试用
-          </a>
+        <div class="mx-auto md:hidden">
+          <AppLogo compact />
+        </div>
+
+        <nav class="hidden min-w-0 flex-1 items-center justify-center md:flex">
+          <div class="flex items-center gap-1 rounded-full border border-black/6 bg-white/80 px-2 py-1 shadow-[0_6px_18px_rgba(26,26,26,0.04)]">
+            <div
+              v-for="item in navItems"
+              :key="item.label"
+              class="relative"
+              @mouseenter="item.children ? openDropdown(item.label) : closeDropdown()"
+              @mouseleave="item.children ? closeDropdown() : undefined"
+            >
+              <a
+                :href="item.href"
+                class="inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-[#262626] transition-colors duration-200 hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
+              >
+                {{ item.label }}
+                <svg
+                  v-if="item.children"
+                  class="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m6 9 6 6 6-6" />
+                </svg>
+              </a>
+
+              <div
+                v-if="item.children"
+                :class="[
+                  'absolute left-1/2 top-[calc(100%+12px)] w-44 -translate-x-1/2 rounded-2xl border border-black/6 bg-white p-2 shadow-[0_16px_40px_rgba(26,26,26,0.10)] transition-all duration-200 ease-out',
+                  activeDropdown === item.label
+                    ? 'visible translate-y-0 opacity-100'
+                    : 'invisible -translate-y-2 opacity-0',
+                ]"
+              >
+                <a
+                  v-for="child in item.children"
+                  :key="child.href"
+                  :href="child.href"
+                  class="block rounded-xl px-3 py-2 text-sm text-[#595959] transition-colors duration-200 hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
+                >
+                  {{ child.label }}
+                </a>
+              </div>
+            </div>
+          </div>
         </nav>
+
+        <div class="hidden shrink-0 items-center justify-end gap-3 md:flex md:w-[200px]">
+          <button
+            type="button"
+            class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/8 text-[#595959] transition-colors hover:border-[#48A9DE] hover:text-[#48A9DE]"
+            aria-label="搜索"
+          >
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
+            </svg>
+          </button>
+          <a
+            href="#about"
+            class="inline-flex items-center justify-center rounded-full bg-[#48A9DE] px-5 py-2.5 text-sm font-semibold text-white transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:bg-[#3D98C8] hover:shadow-[0_14px_30px_rgba(72,169,222,0.26)]"
+          >
+            立即加入
+          </a>
+        </div>
       </div>
     </div>
+
+    <transition
+      enter-active-class="transition-all duration-200 ease-out"
+      enter-from-class="-translate-y-2 opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition-all duration-200 ease-out"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="-translate-y-2 opacity-0"
+    >
+      <div
+        v-if="isDrawerOpen"
+        class="border-t border-black/6 bg-white px-4 py-4 shadow-[0_18px_40px_rgba(26,26,26,0.08)] md:hidden"
+      >
+        <div class="space-y-2">
+          <template v-for="item in navItems" :key="item.label">
+            <a
+              :href="item.href"
+              class="block rounded-2xl px-4 py-3 text-sm font-medium text-[#262626] transition-colors hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
+              @click="isDrawerOpen = false"
+            >
+              {{ item.label }}
+            </a>
+            <div v-if="item.children" class="mt-1 space-y-1 pl-3">
+              <a
+                v-for="child in item.children"
+                :key="child.href"
+                :href="child.href"
+                class="block rounded-xl px-4 py-2 text-sm text-[#595959] transition-colors hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
+                @click="isDrawerOpen = false"
+              >
+                {{ child.label }}
+              </a>
+            </div>
+          </template>
+          <a
+            href="#about"
+            class="mt-3 inline-flex w-full items-center justify-center rounded-full bg-[#48A9DE] px-5 py-3 text-sm font-semibold text-white"
+            @click="isDrawerOpen = false"
+          >
+            立即加入
+          </a>
+        </div>
+      </div>
+    </transition>
   </header>
 </template>

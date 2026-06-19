@@ -2,28 +2,84 @@
 @plugin "heroui-vue/plugin";
 
 @theme {
-  --color-primary: #00A1FF;
-  --color-primary-dark: #0088CC;
-  --color-primary-light: #33B5FF;
-  --color-secondary: #00375D;
-  --color-secondary-dark: #002A47;
-  --color-secondary-light: #1A4A6B;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --color-primary: #48A9DE;
+  --color-primary-dark: #3D98C8;
+  --color-primary-light: #84C6E9;
+  --color-secondary: #1A1A1A;
+  --color-secondary-dark: #111111;
+  --color-secondary-light: #262626;
+  --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --animate-bounce-slow: bounce 3s infinite;
   --animate-pulse-slow: pulse 4s infinite;
   --animate-float: float 6s ease-in-out infinite;
 }
 
 @layer base {
+  :root {
+    --ww-primary: #48A9DE;
+    --ww-heading: #1A1A1A;
+    --ww-text: #262626;
+    --ww-text-soft: #595959;
+    --ww-text-muted: #8C8C8C;
+    --ww-surface: #FFFFFF;
+    --ww-surface-muted: #F7F9FB;
+    --ww-border: rgba(26, 26, 26, 0.08);
+    --ww-shadow: 0 16px 40px rgba(26, 26, 26, 0.08);
+    --ww-font-display: "得意黑", "Smiley Sans", "Inter", "PingFang SC", sans-serif;
+    --ww-font-body: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+
   html {
     scroll-behavior: smooth;
   }
 
   body {
-    font-family: var(--font-sans);
-    color: #111827;
+    margin: 0;
+    font-family: var(--ww-font-body);
+    color: var(--ww-text);
+    background: var(--ww-surface);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  body,
+  button,
+  input,
+  textarea {
+    font-family: var(--ww-font-body);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 0;
+    color: var(--ww-heading);
+    font-family: var(--ww-font-display);
+  }
+
+  h2,
+  h3 {
+    font-size: 28px;
+    line-height: 1.4;
+  }
+
+  p {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  img {
+    display: block;
+    max-width: 100%;
   }
 }
 
@@ -66,5 +122,43 @@
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@layer components {
+  .ww-shell {
+    @apply mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8;
+  }
+
+  .ww-label {
+    @apply inline-flex items-center rounded-md px-2.5 py-1 text-xs font-semibold tracking-[0.02em];
+    color: var(--ww-primary);
+    background: rgba(72, 169, 222, 0.12);
+  }
+
+  .ww-card {
+    background: var(--ww-surface);
+    border: 1px solid var(--ww-border);
+    box-shadow: 0 1px 2px rgba(26, 26, 26, 0.02);
+    transition: transform 300ms ease-in-out, box-shadow 300ms ease-in-out, border-color 300ms ease-in-out;
+  }
+
+  .ww-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(72, 169, 222, 0.2);
+    box-shadow: var(--ww-shadow);
+  }
+
+  .ww-fade-image {
+    opacity: 0;
+    transition: opacity 400ms ease;
+  }
+
+  .ww-fade-image.is-loaded {
+    opacity: 1;
+  }
+
+  .ww-muted {
+    color: var(--ww-text-muted);
   }
 }

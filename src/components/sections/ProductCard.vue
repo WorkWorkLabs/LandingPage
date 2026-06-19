@@ -8,14 +8,26 @@
   >
     <div class="product-content">
       <div class="product-header">
-        <h3 class="product-title">{{ product.title }}</h3>
-        <p v-if="product.subtitle" class="product-subtitle">{{ product.subtitle }}</p>
+        <h3 class="product-title">
+          {{ product.title }}
+        </h3>
+        <p
+          v-if="product.subtitle"
+          class="product-subtitle"
+        >
+          {{ product.subtitle }}
+        </p>
       </div>
       
-      <p class="product-description">{{ product.description }}</p>
+      <p class="product-description">
+        {{ product.description }}
+      </p>
       
       <!-- Product Features -->
-      <div v-if="product.features.length > 0" class="product-features">
+      <div
+        v-if="product.features.length > 0"
+        class="product-features"
+      >
         <div
           v-for="feature in product.features"
           :key="feature.label"
@@ -29,7 +41,10 @@
           </span>
           <div class="feature-details">
             <span class="feature-label">{{ feature.label }}</span>
-            <span v-if="feature.value && !feature.highlight" class="feature-value">
+            <span
+              v-if="feature.value && !feature.highlight"
+              class="feature-value"
+            >
               {{ feature.value }}
             </span>
           </div>
@@ -37,7 +52,10 @@
       </div>
       
       <!-- Product Tags -->
-      <div v-if="product.tags && product.tags.length > 0" class="product-tags">
+      <div
+        v-if="product.tags && product.tags.length > 0"
+        class="product-tags"
+      >
         <span
           v-for="tag in product.tags"
           :key="tag"
@@ -49,7 +67,10 @@
       
       <!-- Product Link -->
       <div class="product-footer">
-        <a :href="product.link" class="product-link group">
+        <a
+          :href="product.link"
+          class="product-link group"
+        >
           Details link
           <svg
             class="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1"
