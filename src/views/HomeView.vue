@@ -284,7 +284,7 @@ onMounted(() => {
             </div>
 
             <div class="rounded-2xl border border-black/6 bg-white p-5">
-              <p class="text-xs font-semibold uppercase tracking-[0.12em] text-[#8C8C8C]">今日话题</p>
+              <p class="text-xs font-semibold uppercase tracking-[0.12em] text-[#8C8C8C]">常用建议</p>
               <div class="mt-3 space-y-3">
                 <a
                   v-for="topic in ['游民地图', '工具箱', '漫游指南']"
