@@ -150,12 +150,12 @@ onUnmounted(() => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
             </svg>
           </button>
-          <a
-            href="#about"
+          <router-link
+            to="/login"
             class="inline-flex items-center justify-center rounded-full bg-[#48A9DE] px-5 py-2.5 text-sm font-semibold text-white transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:bg-[#3D98C8] hover:shadow-[0_14px_30px_rgba(72,169,222,0.26)]"
           >
             立即加入
-          </a>
+          </router-link>
         </div>
       </div>
     </div>
@@ -193,13 +193,13 @@ onUnmounted(() => {
               </a>
             </div>
           </template>
-          <a
-            href="#about"
+          <router-link
+            to="/login"
             class="mt-3 inline-flex w-full items-center justify-center rounded-full bg-[#48A9DE] px-5 py-3 text-sm font-semibold text-white"
             @click="isDrawerOpen = false"
           >
             立即加入
-          </a>
+          </router-link>
         </div>
       </div>
     </transition>

@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 
 // Lazy load views for better performance
 const Home = () => import('@/views/HomeView.vue')
+const Login = () => import('@/views/LoginView.vue')
 
 const routes: RouteRecordRaw[] = [
   {
@@ -12,6 +13,15 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: 'WorkWork - Global Remote Work Ecosystem',
       description: 'Building a global remote work ecosystem for digital nomads, remote workers, freelancers, and super individuals.'
+    }
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: Login,
+    meta: {
+      title: '登录 - WorkWork',
+      description: '登录 WorkWork 数字游民社区'
     }
   },
   {

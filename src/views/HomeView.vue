@@ -40,6 +40,33 @@ const featuredStories = [
   },
 ]
 
+const podcastEpisodes = [
+  {
+    id: 'p1',
+    title: '数字游民的第一年：从辞职到月入五万',
+    host: 'WorkWork FM',
+    duration: '42:18',
+    date: '6月15日',
+    image: 'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?w=400&h=400&fit=crop&auto=format',
+  },
+  {
+    id: 'p2',
+    title: '一人公司的现金流管理：稳定币与跨境收款',
+    host: 'OPC Radio',
+    duration: '38:45',
+    date: '6月10日',
+    image: 'https://images.unsplash.com/photo-1589903308904-1010c2294adc?w=400&h=400&fit=crop&auto=format',
+  },
+  {
+    id: 'p3',
+    title: '远程协作工具箱：从 Notion 到 Loom 的最佳实践',
+    host: 'WorkWork FM',
+    duration: '35:22',
+    date: '6月5日',
+    image: 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=400&h=400&fit=crop&auto=format',
+  },
+]
+
 const articles: Article[] = [
   {
     id: 'a1',
@@ -273,14 +300,12 @@ onMounted(() => {
               <p class="mt-2 text-sm leading-[1.6] text-[#595959]">
                 面向数字游民与一人公司的内容平台，展示工具、方法与案例。
               </p>
-              <a
-                href="https://t.me/c/WorkWorkWeb3/1"
-                target="_blank"
-                rel="noopener noreferrer"
+              <router-link
+                to="/login"
                 class="mt-4 inline-flex items-center rounded-full bg-[#48A9DE] px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-[#3D98C8]"
               >
                 立即加入
-              </a>
+              </router-link>
             </div>
 
             <div class="rounded-2xl border border-black/6 bg-white p-5">
@@ -300,6 +325,52 @@ onMounted(() => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Podcast Section -->
+    <section class="border-y border-black/6 bg-white py-6">
+      <div class="ww-shell">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[#48A9DE]/10">
+              <svg class="h-4 w-4 text-[#48A9DE]" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3zM5 10a1 1 0 0 0-2 0 9 9 0 0 0 8 8.94V22h2v-3.06A9 9 0 0 0 21 10a1 1 0 0 0-2 0 7 7 0 0 1-14 0z"/>
+              </svg>
+            </div>
+            <h2 class="text-lg font-semibold text-[#1A1A1A]">播客</h2>
+          </div>
+          <a href="#" class="text-sm font-medium text-[#8C8C8C] transition-colors hover:text-[#48A9DE]">
+            查看全部 →
+          </a>
+        </div>
+        <div class="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <a
+            v-for="ep in podcastEpisodes"
+            :key="ep.id"
+            href="#"
+            class="group flex gap-4 rounded-2xl border border-black/6 bg-white p-4 transition-all hover:border-[#48A9DE]/30 hover:shadow-[0_4px_16px_rgba(26,26,26,0.06)]"
+          >
+            <div class="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-[#F3F6F8]">
+              <img
+                :src="ep.image"
+                :alt="ep.title"
+                loading="lazy"
+                class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+              />
+            </div>
+            <div class="min-w-0 flex-1">
+              <h3 class="text-sm font-semibold leading-[1.45] text-[#1A1A1A] line-clamp-2 group-hover:text-[#48A9DE]">
+                {{ ep.title }}
+              </h3>
+              <div class="mt-1.5 flex items-center gap-2 text-[11px] text-[#BFBFBF]">
+                <span class="font-medium text-[#8C8C8C]">{{ ep.host }}</span>
+                <span>{{ ep.duration }}</span>
+                <span>{{ ep.date }}</span>
+              </div>
+            </div>
+          </a>
         </div>
       </div>
     </section>
