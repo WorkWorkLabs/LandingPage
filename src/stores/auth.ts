@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { supabase } from '@/lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 import type { Profile } from '@/types/database'
+import { getAuthRedirectUrl } from '@/config/app'
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -11,6 +12,7 @@ export const useAuthStore = defineStore('auth', () => {
   const profile = ref<Profile | null>(null)
   const loading = ref(false)
   const initialized = ref(false)
+  let authSubscription: { unsubscribe: () => void } | null = null
 
   // Computed
   const isAuthenticated = computed(() => !!user.value)
@@ -24,21 +26,25 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       // Get initial session
-      const { data: { session: initialSession } } = await supabase.auth.getSession()
+      const { data: { session: initialSession }, error } = await supabase.auth.getSession()
+      if (error) throw error
       session.value = initialSession
       user.value = initialSession?.user ?? null
 
       // Listen for auth changes
-      supabase.auth.onAuthStateChange((_event, newSession) => {
-        session.value = newSession
-        user.value = newSession?.user ?? null
-        
-        if (newSession?.user) {
-          fetchProfile(newSession.user.id)
-        } else {
-          profile.value = null
-        }
-      })
+      if (!authSubscription) {
+        const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
+          session.value = newSession
+          user.value = newSession?.user ?? null
+
+          if (newSession?.user) {
+            void fetchProfile(newSession.user.id)
+          } else {
+            profile.value = null
+          }
+        })
+        authSubscription = data.subscription
+      }
 
       // Fetch profile if user exists
       if (user.value) {
@@ -50,6 +56,27 @@ export const useAuthStore = defineStore('auth', () => {
       loading.value = false
       initialized.value = true
     }
+  }
+
+  // Refresh current auth state after direct auth calls
+  async function refreshSession() {
+    const { data, error } = await supabase.auth.getSession()
+    if (error) throw error
+
+    const newSession = data.session
+    session.value = newSession
+    user.value = newSession?.user ?? null
+
+    if (newSession?.user) {
+      await fetchProfile(newSession.user.id)
+    } else {
+      profile.value = null
+    }
+  }
+
+  function dispose() {
+    authSubscription?.unsubscribe()
+    authSubscription = null
   }
 
   // Fetch user profile
@@ -69,13 +96,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Sign up with email
-  async function signUp(email: string, password: string, username?: string) {
+  async function signUp(email: string, password: string, username?: string, redirectPath = '/') {
     loading.value = true
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
+          emailRedirectTo: getAuthRedirectUrl(redirectPath),
           data: {
             username: username || email.split('@')[0],
           },
@@ -83,6 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
       })
 
       if (error) throw error
+      await refreshSession()
       return { data, error: null }
     } catch (error: any) {
       return { data: null, error: error.message }
@@ -101,6 +130,7 @@ export const useAuthStore = defineStore('auth', () => {
       })
 
       if (error) throw error
+      await refreshSession()
       return { data, error: null }
     } catch (error: any) {
       return { data: null, error: error.message }
@@ -110,11 +140,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Sign in with magic link
-  async function signInWithMagicLink(email: string) {
+  async function signInWithMagicLink(email: string, redirectPath = '/') {
     loading.value = true
     try {
       const { data, error } = await supabase.auth.signInWithOtp({
         email,
+        options: {
+          emailRedirectTo: getAuthRedirectUrl(redirectPath),
+        },
       })
 
       if (error) throw error
@@ -127,13 +160,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Sign in with Google (OAuth)
-  async function signInWithGoogle() {
+  async function signInWithGoogle(redirectPath = '/') {
     loading.value = true
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: getAuthRedirectUrl(redirectPath),
         },
       })
 
@@ -147,13 +180,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Sign in with GitHub (OAuth)
-  async function signInWithGitHub() {
+  async function signInWithGitHub(redirectPath = '/') {
     loading.value = true
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: getAuthRedirectUrl(redirectPath),
         },
       })
 
@@ -167,11 +200,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   // Sign in with Telegram (OAuth)
-  async function signInWithTelegram() {
+  async function signInWithTelegram(redirectPath = '/') {
     loading.value = true
     try {
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'telegram',
+        options: {
+          redirectTo: getAuthRedirectUrl(redirectPath),
+        },
       })
 
       if (error) throw error
@@ -262,6 +298,8 @@ export const useAuthStore = defineStore('auth', () => {
     
     // Actions
     initialize,
+    refreshSession,
+    dispose,
     fetchProfile,
     signUp,
     signIn,

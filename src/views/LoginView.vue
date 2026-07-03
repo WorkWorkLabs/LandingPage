@@ -1,15 +1,22 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { supabase } from '@/lib/supabase'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
+const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const loading = ref<string | null>(null)
 const error = ref('')
 const success = ref('')
 const mode = ref<'login' | 'register'>('login')
 const email = ref('')
 const password = ref('')
+
+function getRedirectPath() {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/'
+}
 
 async function signInWithEmail() {
   if (!email.value || !password.value) {
@@ -21,12 +28,10 @@ async function signInWithEmail() {
   success.value = ''
 
   try {
-    const { error: err } = await supabase.auth.signInWithPassword({
-      email: email.value,
-      password: password.value,
-    })
-    if (err) throw err
-    router.push('/')
+    const result = await authStore.signIn(email.value, password.value)
+    if (result.error) throw new Error(result.error)
+    loading.value = null
+    router.push(getRedirectPath())
   } catch (e: any) {
     error.value = e.message || '登录失败'
     loading.value = null
@@ -55,14 +60,13 @@ async function signUpWithEmail() {
   success.value = ''
 
   try {
-    const { error: err } = await supabase.auth.signUp({
-      email: email.value,
-      password: password.value,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
-    })
-    if (err) throw err
+    const result = await authStore.signUp(email.value, password.value, undefined, getRedirectPath())
+    if (result.error) throw new Error(result.error)
+    if (authStore.isAuthenticated) {
+      loading.value = null
+      router.push(getRedirectPath())
+      return
+    }
     success.value = '注册成功！请检查邮箱中的验证链接。'
     loading.value = null
   } catch (e: any) {
@@ -75,11 +79,8 @@ async function signInWithGoogle() {
   loading.value = 'google'
   error.value = ''
   try {
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    })
-    if (err) throw err
+    const result = await authStore.signInWithGoogle(getRedirectPath())
+    if (result.error) throw new Error(result.error)
   } catch (e: any) {
     error.value = e.message || 'Google 登录失败'
     loading.value = null
@@ -90,11 +91,8 @@ async function signInWithGitHub() {
   loading.value = 'github'
   error.value = ''
   try {
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: { redirectTo: window.location.origin },
-    })
-    if (err) throw err
+    const result = await authStore.signInWithGitHub(getRedirectPath())
+    if (result.error) throw new Error(result.error)
   } catch (e: any) {
     error.value = e.message || 'GitHub 登录失败'
     loading.value = null

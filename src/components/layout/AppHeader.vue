@@ -1,13 +1,21 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import AppLogo from './AppLogo.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 const isDrawerOpen = ref(false)
 const scrolled = ref(false)
 const activeDropdown = ref<string | null>(null)
+
+const displayName = computed(() => {
+  return authStore.profile?.username || authStore.user?.email?.split('@')[0] || '账户'
+})
+
+const userInitial = computed(() => displayName.value.slice(0, 1).toUpperCase())
 
 const navItems = [
   { label: '推荐', href: '#hero' },
@@ -40,7 +48,17 @@ const closeDropdown = () => {
 function navigateTo(item: { href: string; isRoute?: boolean }) {
   if (item.isRoute) {
     router.push(item.href)
+    return
   }
+
+  if (router.currentRoute.value.path !== '/') {
+    router.push({ path: '/', hash: item.href })
+  }
+}
+
+async function handleSignOut() {
+  await authStore.signOut()
+  router.push('/')
 }
 
 const handleScroll = () => {
@@ -160,7 +178,27 @@ onUnmounted(() => {
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" />
             </svg>
           </button>
+          <template v-if="authStore.isAuthenticated">
+            <router-link
+              to="/publish"
+              class="inline-flex items-center justify-center rounded-full border border-[#48A9DE]/35 px-4 py-2.5 text-sm font-semibold text-[#2E8FBE] transition-colors hover:bg-[#48A9DE]/8"
+            >
+              投稿
+            </router-link>
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 rounded-full bg-[#F5F8FA] px-3 py-2 text-sm font-semibold text-[#262626] transition-colors hover:bg-[#EDF4F8]"
+              :title="`${displayName}，点击退出`"
+              @click="handleSignOut"
+            >
+              <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#48A9DE] text-xs text-white">
+                {{ userInitial }}
+              </span>
+              退出
+            </button>
+          </template>
           <router-link
+            v-else
             to="/login"
             class="inline-flex items-center justify-center rounded-full bg-[#48A9DE] px-5 py-2.5 text-sm font-semibold text-white transition-all duration-300 ease-in-out hover:-translate-y-0.5 hover:bg-[#3D98C8] hover:shadow-[0_14px_30px_rgba(72,169,222,0.26)]"
           >
@@ -203,7 +241,24 @@ onUnmounted(() => {
               </a>
             </div>
           </template>
+          <template v-if="authStore.isAuthenticated">
+            <router-link
+              to="/publish"
+              class="mt-3 inline-flex w-full items-center justify-center rounded-full border border-[#48A9DE]/35 px-5 py-3 text-sm font-semibold text-[#2E8FBE]"
+              @click="isDrawerOpen = false"
+            >
+              投稿
+            </router-link>
+            <button
+              type="button"
+              class="inline-flex w-full items-center justify-center rounded-full bg-[#F5F8FA] px-5 py-3 text-sm font-semibold text-[#262626]"
+              @click="handleSignOut(); isDrawerOpen = false"
+            >
+              退出登录
+            </button>
+          </template>
           <router-link
+            v-else
             to="/login"
             class="mt-3 inline-flex w-full items-center justify-center rounded-full bg-[#48A9DE] px-5 py-3 text-sm font-semibold text-white"
             @click="isDrawerOpen = false"

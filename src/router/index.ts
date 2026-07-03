@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 // Lazy load views for better performance
 const Home = () => import('@/views/HomeView.vue')
@@ -42,7 +43,8 @@ const routes: RouteRecordRaw[] = [
     component: ArticlePublish,
     meta: {
       title: '投稿 - WorkWork',
-      description: '投稿你的文章'
+      description: '投稿你的文章',
+      requiresAuth: true
     }
   },
   {
@@ -86,7 +88,7 @@ const router = createRouter({
 })
 
 // Navigation guards
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to) => {
   // Set page title
   if (to.meta?.title) {
     document.title = to.meta.title as string
@@ -99,8 +101,20 @@ router.beforeEach((to, from, next) => {
       metaDescription.setAttribute('content', to.meta.description as string)
     }
   }
-  
-  next()
+
+  if (to.meta?.requiresAuth) {
+    const authStore = useAuthStore()
+    await authStore.initialize()
+
+    if (!authStore.isAuthenticated) {
+      return {
+        name: 'Login',
+        query: { redirect: to.fullPath },
+      }
+    }
+  }
+
+  return true
 })
 
 export default router

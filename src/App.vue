@@ -33,8 +33,10 @@ import { storeToRefs } from 'pinia'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const { loading } = storeToRefs(appStore)
 
 const updateBreakpoint = () => {
@@ -61,10 +63,12 @@ const handleResize = () => {
 
 onMounted(() => {
   updateBreakpoint()
+  void authStore.initialize()
   window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
+  authStore.dispose()
   window.removeEventListener('resize', handleResize)
 })
 </script>

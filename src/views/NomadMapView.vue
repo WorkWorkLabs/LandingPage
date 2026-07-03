@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 import {
   MAP_CATEGORIES,
   DEFAULT_CENTER,
@@ -10,8 +11,12 @@ import {
   type MapLocation,
   type MapCategory,
 } from '@/constants/map'
+import { runtimeConfig } from '@/config/app'
+import { createNomadSpot, fetchActiveNomadSpots } from '@/services/nomadSpots'
+import type { NomadSpot } from '@/types/database'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
 // ============================================
 // 状态
@@ -21,9 +26,27 @@ const activeCategory = ref<MapCategory>('all')
 const searchQuery = ref('')
 const selectedLocation = ref<MapLocation | null>(null)
 const showDetail = ref(false)
+const showAddSpot = ref(false)
 const mapReady = ref(false)
+const mapLoading = ref(false)
+const mapError = ref('')
+const locating = ref(false)
+const locationError = ref('')
+const userLocation = ref<{ lat: number; lng: number } | null>(null)
+const savingSpot = ref(false)
+const addSpotError = ref('')
+const addSpotName = ref('')
+const addSpotDescription = ref('')
+const addSpotCategory = ref<MapCategory>('food')
+const addSpotCity = ref('')
+const addSpotCountry = ref('')
+const addSpotTags = ref('')
+const addSpotImage = ref('')
+const addSpotLat = ref(DEFAULT_CENTER.lat)
+const addSpotLng = ref(DEFAULT_CENTER.lng)
 let mapInstance: L.Map | null = null
 let markerGroup: L.LayerGroup | null = null
+let userLocationMarker: L.CircleMarker | null = null
 
 // ============================================
 // 模拟数据（后续从 Supabase 加载）
@@ -136,6 +159,8 @@ const filteredLocations = computed(() => {
   })
 })
 
+const spotCategories = computed(() => MAP_CATEGORIES.filter((cat) => cat.id !== 'all'))
+
 // ============================================
 // 获取用户位置
 // ============================================
@@ -150,9 +175,61 @@ function getUserLocation(): Promise<{ lat: number; lng: number } | null> {
         resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude })
       },
       () => resolve(null),
-      { timeout: 5000, enableHighAccuracy: false }
+      {
+        timeout: 10000,
+        maximumAge: 60000,
+        enableHighAccuracy: true,
+      }
     )
   })
+}
+
+function setUserLocationMarker(pos: { lat: number; lng: number }) {
+  if (!mapInstance) return
+
+  if (!userLocationMarker) {
+    userLocationMarker = L.circleMarker([pos.lat, pos.lng], {
+      radius: 9,
+      color: '#ffffff',
+      weight: 3,
+      fillColor: '#2A9D3E',
+      fillOpacity: 1,
+      opacity: 1,
+    })
+      .bindTooltip('我的位置', {
+        direction: 'top',
+        offset: [0, -10],
+        opacity: 0.9,
+      })
+      .addTo(mapInstance)
+  } else {
+    userLocationMarker.setLatLng([pos.lat, pos.lng])
+  }
+}
+
+async function locateMe(options: { animate?: boolean } = {}) {
+  if (!mapInstance || locating.value) return
+
+  locating.value = true
+  locationError.value = ''
+
+  const pos = await getUserLocation()
+  locating.value = false
+
+  if (!pos) {
+    locationError.value = '无法获取你的位置'
+    return
+  }
+
+  userLocation.value = pos
+  setUserLocationMarker(pos)
+
+  const targetZoom = Math.max(mapInstance.getZoom(), runtimeConfig.maps.userZoom)
+  if (options.animate) {
+    mapInstance.flyTo([pos.lat, pos.lng], targetZoom, { duration: 0.8 })
+  } else {
+    mapInstance.setView([pos.lat, pos.lng], targetZoom)
+  }
 }
 
 // ============================================
@@ -164,7 +241,7 @@ async function initMap() {
   // 尝试获取用户位置，默认用清迈
   const userPos = await getUserLocation()
   const center = userPos ?? { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng }
-  const zoom = userPos ? 13 : DEFAULT_ZOOM
+  const zoom = userPos ? runtimeConfig.maps.userZoom : runtimeConfig.maps.defaultZoom || DEFAULT_ZOOM
 
   // CARTO Positron 浅色底图 — 无需 API Key，全球覆盖
   const tileLayer = L.tileLayer(
@@ -195,6 +272,60 @@ async function initMap() {
   // 添加标记点
   refreshMarkers()
   mapReady.value = true
+
+  if (userPos) {
+    userLocation.value = userPos
+    setUserLocationMarker(userPos)
+    mapInstance.setView([userPos.lat, userPos.lng], runtimeConfig.maps.userZoom)
+  }
+}
+
+function getSpotCategory(tags: string[]): MapCategory {
+  const categoryTag = tags.find((tag) => tag.startsWith('category:'))
+  const category = categoryTag?.replace('category:', '')
+  const match = MAP_CATEGORIES.find((cat) => cat.id === category && cat.id !== 'all')
+  return match?.id ?? 'hidden'
+}
+
+function getDisplayTags(tags: string[]): string[] {
+  return tags.filter((tag) => !tag.startsWith('category:'))
+}
+
+function mapSpotToLocation(spot: NomadSpot): MapLocation {
+  const tags = spot.tags ?? []
+
+  return {
+    id: spot.id,
+    name: spot.name,
+    description: spot.description ?? '',
+    category: getSpotCategory(tags),
+    lat: Number(spot.latitude),
+    lng: Number(spot.longitude),
+    city: spot.city ?? '未知城市',
+    country: spot.country ?? '未知国家',
+    images: spot.images ?? [],
+    author: { name: 'WorkWork 游民', avatar: '' },
+    likes: Math.round(Number(spot.rating ?? 0)),
+    tags: getDisplayTags(tags),
+    createdAt: spot.created_at?.slice(0, 10) ?? '',
+  }
+}
+
+async function loadNomadLocations() {
+  mapLoading.value = true
+  mapError.value = ''
+
+  const { data, error } = await fetchActiveNomadSpots()
+  mapLoading.value = false
+
+  if (error) {
+    mapError.value = `地图数据加载失败：${error}`
+    return
+  }
+
+  if (data.length > 0) {
+    locations.value = data.map(mapSpotToLocation)
+  }
 }
 
 // ============================================
@@ -260,6 +391,84 @@ function openDetail(loc: MapLocation) {
   showDetail.value = true
 }
 
+function openAddSpotPanel() {
+  if (!authStore.isAuthenticated) {
+    router.push({ name: 'Login', query: { redirect: '/map' } })
+    return
+  }
+
+  const center = mapInstance?.getCenter()
+  addSpotLat.value = center?.lat ?? userLocation.value?.lat ?? DEFAULT_CENTER.lat
+  addSpotLng.value = center?.lng ?? userLocation.value?.lng ?? DEFAULT_CENTER.lng
+  addSpotError.value = ''
+  showAddSpot.value = true
+}
+
+function closeAddSpotPanel() {
+  showAddSpot.value = false
+  addSpotError.value = ''
+}
+
+function resetAddSpotForm() {
+  addSpotName.value = ''
+  addSpotDescription.value = ''
+  addSpotCategory.value = 'food'
+  addSpotCity.value = ''
+  addSpotCountry.value = ''
+  addSpotTags.value = ''
+  addSpotImage.value = ''
+}
+
+function getSpotTags(): string[] {
+  const customTags = addSpotTags.value
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter((tag) => tag && !tag.startsWith('category:'))
+
+  return [`category:${addSpotCategory.value}`, ...customTags]
+}
+
+async function saveSpot() {
+  if (!authStore.user) {
+    router.push({ name: 'Login', query: { redirect: '/map' } })
+    return
+  }
+
+  if (!addSpotName.value.trim()) {
+    addSpotError.value = '请填写地点名称'
+    return
+  }
+
+  savingSpot.value = true
+  addSpotError.value = ''
+
+  const { data, error } = await createNomadSpot({
+    creatorId: authStore.user.id,
+    name: addSpotName.value.trim(),
+    description: addSpotDescription.value.trim(),
+    latitude: addSpotLat.value,
+    longitude: addSpotLng.value,
+    city: addSpotCity.value.trim(),
+    country: addSpotCountry.value.trim(),
+    tags: getSpotTags(),
+    images: addSpotImage.value.trim() ? [addSpotImage.value.trim()] : [],
+  })
+
+  savingSpot.value = false
+
+  if (error || !data) {
+    addSpotError.value = error ?? '保存地点失败'
+    return
+  }
+
+  const location = mapSpotToLocation(data)
+  locations.value = [location, ...locations.value]
+  resetAddSpotForm()
+  closeAddSpotPanel()
+  openDetail(location)
+  mapInstance?.flyTo([location.lat, location.lng], Math.max(mapInstance.getZoom(), 15), { duration: 0.7 })
+}
+
 function closeDetail() {
   showDetail.value = false
   setTimeout(() => {
@@ -271,7 +480,9 @@ function closeDetail() {
 // 生命周期
 // ============================================
 onMounted(() => {
-  initMap()
+  void authStore.initialize()
+  void initMap()
+  void loadNomadLocations()
 })
 
 onUnmounted(() => {
@@ -305,7 +516,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 分类筛选：详情面板打开时隐藏 -->
-    <div v-if="!showDetail" class="map-categories">
+    <div v-if="!showDetail && !showAddSpot" class="map-categories">
       <button
         v-for="cat in MAP_CATEGORIES"
         :key="cat.id"
@@ -324,11 +535,44 @@ onUnmounted(() => {
     <div class="map-paper-overlay" />
 
     <!-- 公告按钮：详情面板打开时隐藏 -->
-    <button v-if="!showDetail" class="map-announce-btn" title="公告">
+    <button v-if="!showDetail && !showAddSpot" class="map-announce-btn" title="公告">
       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
       </svg>
     </button>
+
+    <!-- 定位按钮：详情面板打开时隐藏 -->
+    <button
+      v-if="!showDetail"
+      class="map-locate-btn"
+      :class="{ locating }"
+      :title="userLocation ? '回到我的位置' : '定位到我附近'"
+      @click="locateMe({ animate: true })"
+    >
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l2.5 2.5M12 2v3m0 14v3m10-10h-3M5 12H2m16.95-6.95l-2.12 2.12M7.17 16.83l-2.12 2.12m0-13.9l2.12 2.12m9.66 9.66l2.12 2.12" />
+      </svg>
+    </button>
+
+    <!-- 添加地点按钮：详情面板打开时隐藏 -->
+    <button
+      v-if="!showDetail && !showAddSpot"
+      class="map-add-btn"
+      :title="authStore.isAuthenticated ? '添加当前位置为地点' : '登录后添加地点'"
+      @click="openAddSpotPanel"
+    >
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14" />
+      </svg>
+    </button>
+
+    <div v-if="(locationError || mapError) && !showDetail && !showAddSpot" class="map-location-error">
+      {{ locationError || mapError }}
+    </div>
+
+    <div v-if="mapLoading && !showDetail && !showAddSpot" class="map-data-status">
+      正在加载地图数据...
+    </div>
 
     <!-- 侧边详情面板 -->
     <Transition name="panel">
@@ -403,9 +647,78 @@ onUnmounted(() => {
       </div>
     </Transition>
 
+    <!-- 添加地点面板 -->
+    <Transition name="panel">
+      <div v-if="showAddSpot" class="map-add-panel">
+        <button class="panel-back" @click="closeAddSpotPanel">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        <div class="map-add-content">
+          <h2 class="map-add-title">添加地点</h2>
+          <p class="map-add-subtitle">地点会保存到 Supabase 的 nomad_spots 表，默认使用当前地图中心坐标。</p>
+
+          <form class="map-add-form" @submit.prevent="saveSpot">
+            <label class="map-field">
+              <span>地点名称</span>
+              <input v-model="addSpotName" type="text" placeholder="例如：安静咖啡馆" />
+            </label>
+
+            <label class="map-field">
+              <span>分类</span>
+              <select v-model="addSpotCategory">
+                <option v-for="cat in spotCategories" :key="cat.id" :value="cat.id">
+                  {{ cat.emoji }} {{ cat.label }}
+                </option>
+              </select>
+            </label>
+
+            <label class="map-field">
+              <span>描述</span>
+              <textarea v-model="addSpotDescription" rows="4" placeholder="补充 WiFi、插座、价格或适合工作的原因" />
+            </label>
+
+            <div class="map-field-grid">
+              <label class="map-field">
+                <span>城市</span>
+                <input v-model="addSpotCity" type="text" placeholder="清迈" />
+              </label>
+              <label class="map-field">
+                <span>国家/地区</span>
+                <input v-model="addSpotCountry" type="text" placeholder="泰国" />
+              </label>
+            </div>
+
+            <label class="map-field">
+              <span>标签</span>
+              <input v-model="addSpotTags" type="text" placeholder="咖啡, WiFi, 安静" />
+            </label>
+
+            <label class="map-field">
+              <span>图片 URL</span>
+              <input v-model="addSpotImage" type="url" placeholder="https://..." />
+            </label>
+
+            <div class="map-coordinate-box">
+              <span>坐标</span>
+              <strong>{{ addSpotLat.toFixed(5) }}, {{ addSpotLng.toFixed(5) }}</strong>
+            </div>
+
+            <p v-if="addSpotError" class="map-form-error">{{ addSpotError }}</p>
+
+            <button class="map-save-btn" type="submit" :disabled="savingSpot">
+              {{ savingSpot ? '保存中...' : '保存地点' }}
+            </button>
+          </form>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 底部归属信息 -->
     <div v-if="mapReady" class="map-engine-badge">
-      🍃 Leaflet + CARTO · 免费开源
+      🍃 Leaflet + CARTO · Supabase
     </div>
   </div>
 </template>
@@ -597,6 +910,67 @@ onUnmounted(() => {
   width: 20px;
   height: 20px;
   color: #595959;
+}
+
+/* ============================================
+   定位按钮
+   ============================================ */
+.map-locate-btn {
+  position: absolute;
+  right: 20px;
+  bottom: 88px;
+  z-index: 1000;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  transition: all 0.2s;
+}
+
+.map-locate-btn:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  transform: scale(1.05);
+}
+
+.map-locate-btn.locating {
+  pointer-events: none;
+}
+
+.map-locate-btn.locating svg {
+  animation: locate-spin 1s linear infinite;
+}
+
+.map-locate-btn svg {
+  width: 20px;
+  height: 20px;
+  color: #2A9D3E;
+}
+
+.map-location-error {
+  position: absolute;
+  right: 20px;
+  bottom: 140px;
+  z-index: 1000;
+  max-width: 180px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  color: #E85D3A;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+@keyframes locate-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ============================================
