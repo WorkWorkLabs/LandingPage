@@ -4,6 +4,9 @@ import type { RouteRecordRaw } from 'vue-router'
 // Lazy load views for better performance
 const Home = () => import('@/views/HomeView.vue')
 const Login = () => import('@/views/LoginView.vue')
+const ArticleDetail = () => import('@/views/ArticleDetailView.vue')
+const ArticlePublish = () => import('@/views/ArticlePublishView.vue')
+const NomadMap = () => import('@/views/NomadMapView.vue')
 
 const routes: RouteRecordRaw[] = [
   {
@@ -22,6 +25,33 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '登录 - WorkWork',
       description: '登录 WorkWork 数字游民社区'
+    }
+  },
+  {
+    path: '/article/:id',
+    name: 'ArticleDetail',
+    component: ArticleDetail,
+    meta: {
+      title: '文章详情 - WorkWork',
+      description: '阅读文章详情'
+    }
+  },
+  {
+    path: '/publish',
+    name: 'ArticlePublish',
+    component: ArticlePublish,
+    meta: {
+      title: '投稿 - WorkWork',
+      description: '投稿你的文章'
+    }
+  },
+  {
+    path: '/map',
+    name: 'NomadMap',
+    component: NomadMap,
+    meta: {
+      title: '游牧者地图 - WorkWork',
+      description: '数字游民全球工作地点地图'
     }
   },
   {

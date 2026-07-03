@@ -1,199 +1,127 @@
-# WorkWork Landing Page Template
+# WorkWork 数字游民社区
 
-A modern, fully-featured Vue 3 + TypeScript landing page template with complete component architecture and extensibility.
+面向数字游民与 OPC 一人公司的内容平台，集成了认证系统、文章投稿、播客和游民地图。
 
-## 🚀 Features
+## 技术栈
 
-### Architecture
-- **Vue 3** with Composition API & `<script setup>`
-- **TypeScript** for type safety
-- **Pinia** for state management
-- **Vue Router** for routing
-- **Vite** for fast development and building
+| 项目 | 技术 |
+|------|------|
+| 框架 | Vue 3 + TypeScript + Composition API |
+| 构建工具 | Vite 5 |
+| 样式 | Tailwind CSS v4 |
+| 状态管理 | Pinia |
+| 路由 | Vue Router |
+| 后端服务 | Supabase（Auth + PostgreSQL + RLS） |
 
-### Components
-- **Modular Architecture**: Fully componentized with clear separation
-- **Base Components**: Reusable UI components (Button, Input, Card)
-- **Layout Components**: Header, Footer with responsive navigation
-- **Section Components**: Hero, Features, Products, Team, Stats, Newsletter
-- **Form Handling**: Built-in validation with Composables
+## 快速开始
 
-### Features
-- ✅ **Fully Responsive** - Mobile-first design
-- ✅ **TypeScript** - Complete type safety
-- ✅ **State Management** - Pinia stores for content and app state  
-- ✅ **Form Validation** - Real-time validation with custom composables
-- ✅ **Smooth Animations** - CSS transitions and keyframes
-- ✅ **SEO Optimized** - Meta tags, structured data
-- ✅ **Performance** - Code splitting, lazy loading
-- ✅ **Accessibility** - ARIA labels, keyboard navigation
-- ✅ **Modern CSS** - CSS Grid, Flexbox, custom properties
-
-## 📁 Project Structure
-
-```
-src/
-├── components/
-│   ├── base/           # Reusable UI components
-│   │   ├── BaseButton.vue
-│   │   ├── BaseInput.vue
-│   │   └── BaseCard.vue
-│   ├── forms/          # Form components
-│   │   └── NewsletterForm.vue
-│   ├── layout/         # Layout components
-│   │   ├── AppHeader.vue
-│   │   └── AppFooter.vue
-│   └── sections/       # Page sections
-│       ├── HeroSection.vue
-│       ├── FeaturesSection.vue
-│       ├── ProductsSection.vue
-│       ├── TeamSection.vue
-│       └── StatsSection.vue
-├── composables/        # Vue composables
-│   └── useFormValidation.ts
-├── stores/            # Pinia stores
-│   ├── app.ts
-│   └── content.ts
-├── types/             # TypeScript types
-│   └── index.ts
-├── views/             # Page views
-│   └── HomeView.vue
-├── router/            # Vue Router
-│   └── index.ts
-├── App.vue
-└── main.ts
-```
-
-## 🛠 Development
-
-### Prerequisites
-- Node.js 16+ 
-- npm or yarn
-
-### Setup
 ```bash
-# Install dependencies
+# 安装依赖
 npm install
 
-# Copy environment file
+# 复制环境变量
 cp .env.example .env
+# 编辑 .env，填入你的 Supabase URL 和 Anon Key
 
-# Start development server
+# 启动开发服务器
 npm run dev
 ```
 
-### Available Scripts
-```bash
-npm run dev         # Start dev server
-npm run build       # Build for production
-npm run preview     # Preview production build
-npm run type-check  # TypeScript type checking
-npm run lint        # Lint with ESLint
-npm run format      # Format with Prettier
+## 环境变量
+
+在项目根目录创建 `.env` 文件：
+
+```env
+VITE_SUPABASE_URL="https://xxx.supabase.co"
+VITE_SUPABASE_ANON_KEY="eyJ..."
 ```
 
-## 🎨 Customization
+- `VITE_SUPABASE_URL`：Supabase 项目 URL（在 Project Settings → API 中获取）
+- `VITE_SUPABASE_ANON_KEY`：Supabase 匿名公钥（同上）
+- **不要**使用 `service_role` key，那只能用在服务端
 
-### Content Management
-All content is managed through Pinia stores:
-- **`stores/content.ts`** - Page content, navigation, team data
-- **`stores/app.ts`** - App configuration, UI state
+## 项目结构
 
-### Styling
-- CSS-in-Vue with scoped styles
-- Custom CSS properties for theming
-- Responsive design with mobile-first approach
-
-### Component Extension
-1. Create new components in appropriate folders
-2. Follow existing patterns for props/events
-3. Use TypeScript interfaces from `types/index.ts`
-4. Add to content store if needed
-
-## 🔧 Configuration
-
-### Environment Variables
-Create `.env` file from `.env.example`:
-- `VITE_APP_TITLE` - Application title
-- `VITE_API_URL` - API endpoint
-- `VITE_GA_ID` - Google Analytics ID
-
-### Build Configuration
-- **Vite config**: `vite.config.ts`
-- **TypeScript**: `tsconfig.json`
-- **Path aliases**: `@/*` maps to `src/*`
-
-## 📱 Responsive Design
-
-Breakpoints:
-- `xs`: < 640px
-- `sm`: 640px+  
-- `md`: 768px+
-- `lg`: 1024px+
-- `xl`: 1280px+
-- `2xl`: 1536px+
-
-## 🚀 Deployment
-
-### Build
-```bash
-npm run build
+```
+src/
+├── views/                          # 页面
+│   ├── HomeView.vue                # 首页（Hero + 播客 + 文章流 + 侧边栏）
+│   └── LoginView.vue               # 登录/注册页（邮箱 + Google + GitHub）
+├── components/layout/              # 布局组件
+│   ├── AppHeader.vue               # 顶部导航栏
+│   ├── AppFooter.vue               # 页脚
+│   └── AppLogo.vue                 # Logo
+├── composables/
+│   └── useTypewriter.ts            # 打字机动画效果
+├── stores/                         # Pinia 状态管理
+│   ├── auth.ts                     # 认证状态（Supabase Auth）
+│   └── app.ts                      # 全局 UI 状态
+├── lib/
+│   └── supabase.ts                 # Supabase 客户端
+├── types/                          # TypeScript 类型定义
+│   ├── database.ts                 # 数据库表结构类型
+│   └── index.ts                    # 通用类型
+├── assets/styles/main.css          # 全局样式
+├── legacy/                         # 旧版首页组件归档（不再使用）
+│   ├── sections/                   # 旧版区块组件
+│   ├── base/                       # 旧版基础组件
+│   ├── composables/                # 旧版组合式函数
+│   ├── stores/                     # 旧版状态管理
+│   └── README.md                   # 旧版文件说明
+├── App.vue                         # 根组件
+├── main.ts                         # 入口文件
+└── router/index.ts                 # 路由配置
 ```
 
-### Deploy to Vercel
+## 数据库结构
+
+SQL 文件位于 `supabase/` 目录，需要在 Supabase Dashboard 的 SQL Editor 中执行：
+
+| 文件 | 说明 |
+|------|------|
+| `supabase/schema.sql` | 表结构（profiles、articles、podcast_episodes、nomad_spots、bookmarks） |
+| `supabase/rls-policies.sql` | 行级安全策略 |
+
+### 数据表
+
+- **profiles**：用户资料（注册时自动创建）
+- **articles**：文章（支持草稿→审核→发布流程）
+- **podcast_episodes**：播客节目
+- **nomad_spots**：游民地图标记点
+- **bookmarks**：收藏/点赞
+
+## 认证系统
+
+支持以下登录方式（需在 Supabase Dashboard → Authentication → Providers 中启用）：
+
+- **邮箱 + 密码**：注册后需邮箱验证
+- **Google OAuth**：需要在 Google Cloud Console 创建 OAuth Client
+- **GitHub OAuth**：需要在 GitHub Settings → Developer Settings 创建 OAuth App
+
+密码要求：至少 8 个字符，包含小写字母、大写字母、数字和特殊符号。
+
+## 可用脚本
+
 ```bash
-npm i -g vercel
-vercel --prod
+npm run dev         # 启动开发服务器
+npm run build       # 构建生产版本
+npm run preview     # 预览生产版本
 ```
 
-### Deploy to Netlify
-1. Connect your repo to Netlify
-2. Build command: `npm run build`
-3. Publish directory: `dist`
+## 部署
 
-## 📊 Performance
+项目通过 GitHub Actions 自动部署到 GitHub Pages。推送到 `main` 分支会触发自动构建和部署。
 
-- **Code Splitting**: Automatic route-based splitting
-- **Tree Shaking**: Unused code elimination
-- **Asset Optimization**: Images and fonts optimized
-- **Lazy Loading**: Components loaded on demand
+工作流配置：`.github/workflows/deploy.yml`
 
-## 🎯 SEO Features
+## 协作开发
 
-- Meta tags with dynamic content
-- Structured data (JSON-LD)
-- Semantic HTML
-- Open Graph tags
-- Twitter Card support
-- Canonical URLs
+1. Fork 本仓库
+2. 创建功能分支：`git checkout -b feature/你的功能`
+3. 提交更改：`git commit -m 'feat: 添加某个功能'`
+4. 推送分支：`git push origin feature/你的功能`
+5. 提交 Pull Request
 
-## 🧪 Testing (Optional)
+## 开源协议
 
-Add testing framework:
-```bash
-# Vitest + Testing Library
-npm i -D vitest @vue/test-utils jsdom
-npm i -D @testing-library/vue @testing-library/jest-dom
-```
-
-## 📝 Contributing
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 🤝 Support
-
-- Create an issue for bugs/features
-- Star the repo if it helps you!
-- Contribute back improvements
-
----
-
-**Built with ❤️ using Vue3**
+本项目基于 [AGPL-3.0](LICENSE) 协议开源。使用、修改或分发本项目代码时，必须遵守该协议的全部条款，包括公开修改后的完整源码。

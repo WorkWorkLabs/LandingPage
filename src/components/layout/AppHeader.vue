@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import AppLogo from './AppLogo.vue'
+
+const router = useRouter()
 
 const isDrawerOpen = ref(false)
 const scrolled = ref(false)
@@ -18,7 +21,7 @@ const navItems = [
     ],
   },
   { label: '案例', href: '#articles' },
-  { label: '游民地图', href: '#nomad-map' },
+  { label: '游民地图', href: '/map', isRoute: true },
   { label: '关于 WorkWork', href: '#footer' },
 ]
 
@@ -32,6 +35,12 @@ const openDropdown = (label: string) => {
 
 const closeDropdown = () => {
   activeDropdown.value = null
+}
+
+function navigateTo(item: { href: string; isRoute?: boolean }) {
+  if (item.isRoute) {
+    router.push(item.href)
+  }
 }
 
 const handleScroll = () => {
@@ -105,6 +114,7 @@ onUnmounted(() => {
               <a
                 :href="item.href"
                 class="inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-[#262626] transition-colors duration-200 hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
+                @click.prevent="navigateTo(item)"
               >
                 {{ item.label }}
                 <svg
@@ -177,7 +187,7 @@ onUnmounted(() => {
             <a
               :href="item.href"
               class="block rounded-2xl px-4 py-3 text-sm font-medium text-[#262626] transition-colors hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
-              @click="isDrawerOpen = false"
+              @click.prevent="navigateTo(item); isDrawerOpen = false"
             >
               {{ item.label }}
             </a>
@@ -187,7 +197,7 @@ onUnmounted(() => {
                 :key="child.href"
                 :href="child.href"
                 class="block rounded-xl px-4 py-2 text-sm text-[#595959] transition-colors hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
-                @click="isDrawerOpen = false"
+                @click.prevent="isDrawerOpen = false"
               >
                 {{ child.label }}
               </a>

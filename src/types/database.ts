@@ -23,6 +23,9 @@ export interface Article {
   category: string
   status: ArticleStatus
   read_time: string | null
+  views: number
+  is_featured: boolean
+  author_name: string | null
   published_at: string | null
   created_at: string
   updated_at: string
@@ -40,6 +43,24 @@ export interface PodcastEpisode {
   description: string | null
   published_at: string | null
   created_at: string
+}
+
+export interface Category {
+  id: string
+  slug: string
+  label: string
+  icon: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+}
+
+export interface Subscriber {
+  id: string
+  email: string
+  user_id: string | null
+  subscribed_at: string
+  is_active: boolean
 }
 
 export interface NomadSpot {
@@ -88,6 +109,16 @@ export interface Database {
         Insert: Omit<PodcastEpisode, 'id' | 'created_at'>
         Update: Partial<Omit<PodcastEpisode, 'id' | 'created_at'>>
       }
+      categories: {
+        Row: Category
+        Insert: Omit<Category, 'id' | 'created_at'>
+        Update: Partial<Omit<Category, 'id' | 'created_at'>>
+      }
+      subscribers: {
+        Row: Subscriber
+        Insert: Omit<Subscriber, 'id' | 'subscribed_at'>
+        Update: Partial<Omit<Subscriber, 'id' | 'subscribed_at'>>
+      }
       nomad_spots: {
         Row: NomadSpot
         Insert: Omit<NomadSpot, 'id' | 'created_at' | 'updated_at' | 'creator'>
@@ -108,7 +139,7 @@ export interface Database {
   }
 }
 
-// Helper types for queries
+// Helper types
 export type ArticleWithAuthor = Article & {
   author: Profile
 }
@@ -117,7 +148,6 @@ export type SpotWithCreator = NomadSpot & {
   creator: Profile
 }
 
-// Pagination type
 export interface PaginatedResponse<T> {
   data: T[]
   count: number
@@ -126,7 +156,6 @@ export interface PaginatedResponse<T> {
   totalPages: number
 }
 
-// API response type
 export interface ApiResponse<T> {
   data: T | null
   error: string | null
