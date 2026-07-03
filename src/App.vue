@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex flex-col bg-background text-foreground">
+  <div class="min-h-screen flex flex-col bg-white text-[#262626]">
     <AppHeader />
 
     <main class="flex-1 pt-16">
@@ -19,8 +19,8 @@
         class="fixed inset-0 bg-white/90 backdrop-blur-sm flex items-center justify-center z-[9999]"
       >
         <div class="text-center">
-          <div class="w-10 h-10 border-4 border-default-200 border-t-primary rounded-full animate-spin mx-auto mb-4" />
-          <p class="text-default-500 font-medium">Loading...</p>
+          <div class="w-10 h-10 border-4 border-gray-200 border-t-[#48A9DE] rounded-full animate-spin mx-auto mb-4" />
+          <p class="text-[#8C8C8C] font-medium">Loading...</p>
         </div>
       </div>
     </Transition>

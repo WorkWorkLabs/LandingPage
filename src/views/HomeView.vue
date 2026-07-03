@@ -85,6 +85,13 @@ function formatDate(dateStr: string | null): string {
 // --- 骨架屏组件 ---
 const SkeletonBox = 'div'
 
+const quickSuggestions = [
+  { label: '游民地图', to: '/map' },
+  { label: '工具箱', href: '#toolbox' },
+  { label: '漫游指南', href: '#nomad-guide' },
+  { label: '签证指南', href: '#visa-guide' },
+] as const
+
 // --- 加载数据（各区域独立加载，不互相阻塞） ---
 onMounted(() => {
   document.title = '数字游民 × OPC 一人公司 | workwork'
@@ -255,17 +262,28 @@ onMounted(() => {
             <div class="rounded-2xl border border-black/6 bg-white p-5">
               <p class="text-xs font-semibold uppercase tracking-[0.12em] text-[#8C8C8C]">常用建议</p>
               <div class="mt-3 space-y-3">
-                <a
-                  v-for="topic in ['游民地图', '工具箱', '漫游指南']"
-                  :key="topic"
-                  href="#about"
-                  class="flex items-center justify-between rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-[#262626] transition-all hover:border-[#48A9DE]/30 hover:bg-[#48A9DE]/5 hover:text-[#48A9DE]"
-                >
-                  <span>{{ topic }}</span>
-                  <svg class="h-4 w-4 text-[#D9D9D9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" />
-                  </svg>
-                </a>
+                <template v-for="topic in quickSuggestions" :key="topic.label">
+                  <router-link
+                    v-if="'to' in topic"
+                    :to="topic.to"
+                    class="flex items-center justify-between rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-[#262626] transition-all hover:border-[#48A9DE]/30 hover:bg-[#48A9DE]/5 hover:text-[#48A9DE]"
+                  >
+                    <span>{{ topic.label }}</span>
+                    <svg class="h-4 w-4 text-[#D9D9D9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" />
+                    </svg>
+                  </router-link>
+                  <a
+                    v-else
+                    :href="topic.href"
+                    class="flex items-center justify-between rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-[#262626] transition-all hover:border-[#48A9DE]/30 hover:bg-[#48A9DE]/5 hover:text-[#48A9DE]"
+                  >
+                    <span>{{ topic.label }}</span>
+                    <svg class="h-4 w-4 text-[#D9D9D9]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m9 5 7 7-7 7" />
+                    </svg>
+                  </a>
+                </template>
               </div>
             </div>
           </div>
@@ -332,7 +350,10 @@ onMounted(() => {
     </section>
 
     <!-- Content: Three-column layout -->
-    <section id="about" class="py-6">
+    <section id="about" class="scroll-mt-24 py-6">
+      <div id="toolbox" class="scroll-mt-24" aria-hidden="true" />
+      <div id="nomad-guide" class="scroll-mt-24" aria-hidden="true" />
+      <div id="visa-guide" class="scroll-mt-24" aria-hidden="true" />
       <div class="ww-shell">
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-[200px_1fr_280px]">
           <!-- Left: Category navigation -->

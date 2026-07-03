@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useRouter } from 'vue-router'
@@ -14,6 +14,7 @@ import {
 import { runtimeConfig } from '@/config/app'
 import { createNomadSpot, fetchActiveNomadSpots } from '@/services/nomadSpots'
 import type { NomadSpot } from '@/types/database'
+import { geocode, gcj02ToWgs84, bd09ToWgs84 } from '@/utils/locationParser'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -37,16 +38,79 @@ const savingSpot = ref(false)
 const addSpotError = ref('')
 const addSpotName = ref('')
 const addSpotDescription = ref('')
-const addSpotCategory = ref<MapCategory>('food')
-const addSpotCity = ref('')
-const addSpotCountry = ref('')
-const addSpotTags = ref('')
-const addSpotImage = ref('')
+const addSpotCategory = ref<MapCategory>('work')
 const addSpotLat = ref(DEFAULT_CENTER.lat)
 const addSpotLng = ref(DEFAULT_CENTER.lng)
+
+// 用于外部地图搜索
+const searchName = ref('')
+
+// 搜索提供商和结果
+const searchProvider = ref<'google' | 'amap' | 'baidu'>('amap')
+const searchResults = ref<SearchResultItem[]>([])
+const isSearching = ref(false)
+
+// 添加地点方式：地图搜索 | 地图选点
+const addLocationMode = ref<'search' | 'click'>('search')
+interface SearchResultItem {
+  name: string
+  lat: number
+  lng: number
+  address: string
+  source: string
+}
+
+let addPreviewMarker: L.Marker | null = null
 let mapInstance: L.Map | null = null
+let baseTileLayer: L.TileLayer | null = null
 let markerGroup: L.LayerGroup | null = null
 let userLocationMarker: L.CircleMarker | null = null
+let mapResizeObserver: ResizeObserver | null = null
+let mapRefreshTimer: number | null = null
+
+function isValidCoord(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180 &&
+    !(lat === 0 && lng === 0)
+  )
+}
+
+function refreshMapTiles() {
+  if (!mapInstance) return
+
+  if (mapRefreshTimer) {
+    window.clearTimeout(mapRefreshTimer)
+  }
+
+  mapRefreshTimer = window.setTimeout(() => {
+    mapRefreshTimer = null
+    if (!mapInstance) return
+    mapInstance.invalidateSize({ animate: false, pan: false })
+    baseTileLayer?.redraw()
+  }, 32)
+}
+
+function focusMapOnPoint(lat: number, lng: number, zoom = 16, animate = true) {
+  if (!mapInstance || !isValidCoord(lat, lng)) return
+
+  const targetZoom = Math.min(zoom, mapInstance.getMaxZoom())
+
+  const onMoveComplete = () => {
+    refreshMapTiles()
+  }
+
+  if (animate) {
+    mapInstance.flyTo([lat, lng], targetZoom, { duration: 0.6 })
+    mapInstance.once('moveend', onMoveComplete)
+    window.setTimeout(onMoveComplete, 800)
+  } else {
+    mapInstance.setView([lat, lng], targetZoom)
+    void nextTick(onMoveComplete)
+  }
+}
 
 // ============================================
 // 模拟数据（后续从 Supabase 加载）
@@ -56,7 +120,7 @@ const locations = ref<MapLocation[]>([
     id: '1',
     name: 'Calm Cafe & Workspace',
     description: '清迈古城内最受欢迎的数字游民工作空间，WiFi 稳定，咖啡好喝，插座充足。',
-    category: 'food',
+    category: 'cafe',
     lat: 18.7883,
     lng: 98.9853,
     city: '清迈',
@@ -71,7 +135,7 @@ const locations = ref<MapLocation[]>([
     id: '2',
     name: '宁曼路共享办公',
     description: '清迈宁曼路上的联合办公空间，月卡 3500 泰铢，24 小时开放。',
-    category: 'fun',
+    category: 'work',
     lat: 18.7953,
     lng: 98.9693,
     city: '清迈',
@@ -86,7 +150,7 @@ const locations = ref<MapLocation[]>([
     id: '3',
     name: '素帖山日落观景台',
     description: '清迈最佳日落观赏点，适合傍晚收工后放松。',
-    category: 'hidden',
+    category: 'outdoor',
     lat: 18.7723,
     lng: 98.9693,
     city: '清迈',
@@ -116,7 +180,7 @@ const locations = ref<MapLocation[]>([
     id: '5',
     name: '上海武康路咖啡馆',
     description: '武康路上适合远程办公的安静咖啡馆，拿铁 32 元。',
-    category: 'food',
+    category: 'cafe',
     lat: 31.2089,
     lng: 121.4378,
     city: '上海',
@@ -131,7 +195,7 @@ const locations = ref<MapLocation[]>([
     id: '6',
     name: '巴厘岛 Canggu 联合办公',
     description: 'Canggu 最热门的游民办公空间，泳池+健身房，月卡 $150。',
-    category: 'fun',
+    category: 'work',
     lat: -8.6478,
     lng: 115.1385,
     city: 'Canggu',
@@ -227,8 +291,78 @@ async function locateMe(options: { animate?: boolean } = {}) {
   const targetZoom = Math.max(mapInstance.getZoom(), runtimeConfig.maps.userZoom)
   if (options.animate) {
     mapInstance.flyTo([pos.lat, pos.lng], targetZoom, { duration: 0.8 })
+    mapInstance.once('moveend', refreshMapTiles)
   } else {
     mapInstance.setView([pos.lat, pos.lng], targetZoom)
+    refreshMapTiles()
+  }
+}
+
+// 点击地图任意位置设置添加坐标（仅地图选点模式生效）
+function handleMapClickForAdd(e: L.LeafletMouseEvent) {
+  if (!showAddSpot.value || addLocationMode.value !== 'click') return
+
+  addSpotLat.value = Number(e.latlng.lat.toFixed(6))
+  addSpotLng.value = Number(e.latlng.lng.toFixed(6))
+  addSpotError.value = ''
+  updateAddPreviewMarker()
+}
+
+function updateAddPreviewMarker() {
+  if (!mapInstance) return
+
+  const lat = addSpotLat.value
+  const lng = addSpotLng.value
+
+  if (addPreviewMarker) {
+    addPreviewMarker.setLatLng([lat, lng])
+  } else {
+    addPreviewMarker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'add-preview-marker',
+        html: `
+          <div style="
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            border: 3px solid #48A9DE;
+            background: rgba(72,169,222,0.2);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 2px 8px rgba(72,169,222,0.5);
+          ">
+            📍
+          </div>
+        `,
+        iconSize: [36, 36],
+        iconAnchor: [18, 36]
+      }),
+      interactive: false
+    }).addTo(mapInstance)
+  }
+}
+
+function removeAddPreviewMarker() {
+  if (addPreviewMarker && mapInstance) {
+    mapInstance.removeLayer(addPreviewMarker)
+    addPreviewMarker = null
+  }
+}
+
+function setAddMode(mode: 'search' | 'click') {
+  addLocationMode.value = mode
+  addSpotError.value = mode === 'click' ? '请在地图上点击选取位置' : ''
+  if (showAddSpot.value) {
+    updateAddPreviewMarker()
+  }
+  syncMapPickMode()
+}
+
+function syncMapPickMode() {
+  if (!mapInstance) return
+
+  mapInstance.off('click', handleMapClickForAdd)
+  if (showAddSpot.value && addLocationMode.value === 'click') {
+    mapInstance.on('click', handleMapClickForAdd)
   }
 }
 
@@ -244,13 +378,15 @@ async function initMap() {
   const zoom = userPos ? runtimeConfig.maps.userZoom : runtimeConfig.maps.defaultZoom || DEFAULT_ZOOM
 
   // CARTO Positron 浅色底图 — 无需 API Key，全球覆盖
-  const tileLayer = L.tileLayer(
+  baseTileLayer = L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     {
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
       maxZoom: 19,
       subdomains: 'abcd',
+      updateWhenZooming: false,
+      keepBuffer: 4,
     }
   )
 
@@ -259,9 +395,10 @@ async function initMap() {
     zoom,
     zoomControl: false,
     attributionControl: true,
+    fadeAnimation: false,
   })
 
-  tileLayer.addTo(mapInstance)
+  baseTileLayer.addTo(mapInstance)
 
   // 缩放控件放右下角
   L.control.zoom({ position: 'bottomright' }).addTo(mapInstance)
@@ -278,6 +415,8 @@ async function initMap() {
     setUserLocationMarker(userPos)
     mapInstance.setView([userPos.lat, userPos.lng], runtimeConfig.maps.userZoom)
   }
+
+  void nextTick(refreshMapTiles)
 }
 
 function getSpotCategory(tags: string[]): MapCategory {
@@ -375,6 +514,27 @@ watch(filteredLocations, () => {
   refreshMarkers()
 })
 
+// 监听添加面板与选点模式，动态绑定/解绑地图点击事件
+watch([showAddSpot, addLocationMode], () => {
+  syncMapPickMode()
+  if (showAddSpot.value) {
+    window.setTimeout(refreshMapTiles, 100)
+  }
+})
+
+watch(searchResults, () => {
+  void nextTick(() => {
+    window.setTimeout(refreshMapTiles, 50)
+  })
+})
+
+// 坐标变化时更新预览标记
+watch([addSpotLat, addSpotLng], () => {
+  if (showAddSpot.value && mapInstance) {
+    updateAddPreviewMarker()
+  }
+})
+
 // ============================================
 // 工具函数
 // ============================================
@@ -384,6 +544,157 @@ function getCategoryColor(cat: MapCategory): string {
 
 function getCategoryEmoji(cat: MapCategory): string {
   return MAP_CATEGORIES.find((c) => c.id === cat)?.emoji ?? '📍'
+}
+
+function openInGoogleMaps(loc: MapLocation) {
+  const query = encodeURIComponent(loc.name || `${loc.lat},${loc.lng}`);
+  const url = `https://www.google.com/maps/search/?api=1&query=${query}&query_place_id=`;
+  // Simpler and reliable:
+  // const url = `https://www.google.com/maps/@${loc.lat},${loc.lng},17z`;
+  window.open(`https://www.google.com/maps/@${loc.lat},${loc.lng},17z`, '_blank');
+}
+
+function openInAmap(loc: MapLocation) {
+  const name = encodeURIComponent(loc.name);
+  const city = encodeURIComponent(loc.city || '');
+  // Amap web marker link
+  const url = `https://www.amap.com/search?query=${name}&city=${city}&latlng=${loc.lat},${loc.lng}`;
+  window.open(url, '_blank');
+}
+
+function openInBaidu(loc: MapLocation) {
+  const url = `https://map.baidu.com/search?query=${encodeURIComponent(loc.name)}&c=${encodeURIComponent(loc.city || '')}&latlng=${loc.lat},${loc.lng}`;
+  window.open(url, '_blank');
+}
+
+// 使用 POI API 在页面内搜索并显示结果列表
+async function searchPOI() {
+  const query = searchName.value.trim();
+  if (!query) return;
+
+  isSearching.value = true;
+  searchResults.value = [];
+
+  const keys = runtimeConfig.maps;
+  let results: SearchResultItem[] = [];
+
+  try {
+    if (searchProvider.value === 'amap' && keys.amapKey) {
+      const url = `https://restapi.amap.com/v3/place/text?keywords=${encodeURIComponent(query)}&key=${keys.amapKey}&offset=10&extensions=all`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === '1' && data.pois) {
+        results = data.pois.flatMap((p: { name: string; location?: string; address?: string; pname?: string; cityname?: string; adname?: string }) => {
+          if (!p.location) return []
+          const [lng, lat] = p.location.split(',').map(Number)
+          if (!isValidCoord(lat, lng)) return []
+          const [wgsLng, wgsLat] = gcj02ToWgs84(lng, lat)
+          if (!isValidCoord(wgsLat, wgsLng)) return []
+          return [{
+            name: p.name,
+            lat: wgsLat,
+            lng: wgsLng,
+            address: p.address || `${p.pname ?? ''}${p.cityname ?? ''}${p.adname ?? ''}`,
+            source: 'amap'
+          }]
+        })
+      }
+    } else if (searchProvider.value === 'baidu' && keys.baiduMapKey) {
+      const url = `https://api.map.baidu.com/place/v2/search?query=${encodeURIComponent(query)}&region=全国&output=json&ak=${keys.baiduMapKey}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.status === 0 && data.results) {
+        results = data.results.flatMap((r: { name: string; location: { lat: number; lng: number }; address?: string; city?: string; area?: string; province?: string }) => {
+          const lat = r.location.lat;
+          const lng = r.location.lng;
+          if (!isValidCoord(lat, lng)) return []
+          const [wgsLng, wgsLat] = bd09ToWgs84(lng, lat);
+          if (!isValidCoord(wgsLat, wgsLng)) return []
+          return [{
+            name: r.name,
+            lat: wgsLat,
+            lng: wgsLng,
+            address: r.address || '',
+            source: 'baidu'
+          }]
+        })
+      }
+    } else if (searchProvider.value === 'google' && keys.googleMapsKey) {
+      // Google Text Search - may have CORS, fallback if fails
+      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${keys.googleMapsKey}`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.status === 'OK' && data.results) {
+          results = data.results.slice(0, 10).flatMap((r: { name: string; geometry: { location: { lat: number; lng: number } }; formatted_address?: string }) => {
+            const lat = r.geometry.location.lat
+            const lng = r.geometry.location.lng
+            if (!isValidCoord(lat, lng)) return []
+            return [{
+              name: r.name,
+              lat,
+              lng,
+              address: r.formatted_address || '',
+              source: 'google'
+            }]
+          })
+        }
+      } catch (e) {
+        // CORS likely, fallback to geocode
+        console.warn('Google Places CORS, falling back to geocode');
+      }
+    }
+
+    // Fallback to our geocode if no results or no key
+    if (results.length === 0) {
+      const geo = await geocode(query);
+      if (geo && isValidCoord(geo.lat, geo.lng)) {
+        results = [{
+          name: geo.name || query,
+          lat: geo.lat,
+          lng: geo.lng,
+          address: '',
+          source: 'geocode'
+        }];
+      }
+    }
+
+    searchResults.value = results;
+  } catch (e) {
+    console.error('Search failed', e);
+    // final fallback
+    const geo = await geocode(query);
+    if (geo && isValidCoord(geo.lat, geo.lng)) {
+      searchResults.value = [{
+        name: geo.name || query,
+        lat: geo.lat,
+        lng: geo.lng,
+        address: '',
+        source: 'geocode'
+      }];
+    }
+  } finally {
+    isSearching.value = false;
+    void nextTick(() => {
+      window.setTimeout(refreshMapTiles, 50)
+    })
+  }
+}
+
+function selectSearchResult(result: SearchResultItem) {
+  if (!isValidCoord(result.lat, result.lng)) {
+    addSpotError.value = '该搜索结果坐标无效，请换一条或改用地图选点'
+    return
+  }
+
+  addSpotLat.value = result.lat;
+  addSpotLng.value = result.lng;
+  addSpotError.value = ''
+  if (!addSpotName.value.trim()) {
+    addSpotName.value = result.name;
+  }
+  updateAddPreviewMarker();
+  focusMapOnPoint(result.lat, result.lng, 16)
 }
 
 function openDetail(loc: MapLocation) {
@@ -401,31 +712,37 @@ function openAddSpotPanel() {
   addSpotLat.value = center?.lat ?? userLocation.value?.lat ?? DEFAULT_CENTER.lat
   addSpotLng.value = center?.lng ?? userLocation.value?.lng ?? DEFAULT_CENTER.lng
   addSpotError.value = ''
+  searchName.value = ''
+  addLocationMode.value = 'search'
+  searchResults.value = []
+  removeAddPreviewMarker()
   showAddSpot.value = true
+  updateAddPreviewMarker()
+  syncMapPickMode()
+
+  window.setTimeout(refreshMapTiles, 50)
 }
 
 function closeAddSpotPanel() {
   showAddSpot.value = false
   addSpotError.value = ''
+  addLocationMode.value = 'search'
+  removeAddPreviewMarker()
+  syncMapPickMode()
+  void nextTick(refreshMapTiles)
 }
 
 function resetAddSpotForm() {
   addSpotName.value = ''
   addSpotDescription.value = ''
-  addSpotCategory.value = 'food'
-  addSpotCity.value = ''
-  addSpotCountry.value = ''
-  addSpotTags.value = ''
-  addSpotImage.value = ''
+  addSpotCategory.value = 'work'
+  searchName.value = ''
+  addLocationMode.value = 'search'
+  removeAddPreviewMarker()
 }
 
 function getSpotTags(): string[] {
-  const customTags = addSpotTags.value
-    .split(/[,，]/)
-    .map((tag) => tag.trim())
-    .filter((tag) => tag && !tag.startsWith('category:'))
-
-  return [`category:${addSpotCategory.value}`, ...customTags]
+  return [`category:${addSpotCategory.value}`]
 }
 
 async function saveSpot() {
@@ -448,10 +765,7 @@ async function saveSpot() {
     description: addSpotDescription.value.trim(),
     latitude: addSpotLat.value,
     longitude: addSpotLng.value,
-    city: addSpotCity.value.trim(),
-    country: addSpotCountry.value.trim(),
     tags: getSpotTags(),
-    images: addSpotImage.value.trim() ? [addSpotImage.value.trim()] : [],
   })
 
   savingSpot.value = false
@@ -464,9 +778,10 @@ async function saveSpot() {
   const location = mapSpotToLocation(data)
   locations.value = [location, ...locations.value]
   resetAddSpotForm()
+  removeAddPreviewMarker()
   closeAddSpotPanel()
   openDetail(location)
-  mapInstance?.flyTo([location.lat, location.lng], Math.max(mapInstance.getZoom(), 15), { duration: 0.7 })
+  focusMapOnPoint(location.lat, location.lng, Math.max(mapInstance?.getZoom() ?? 15, 15))
 }
 
 function closeDetail() {
@@ -483,10 +798,26 @@ onMounted(() => {
   void authStore.initialize()
   void initMap()
   void loadNomadLocations()
+
+  if (mapContainer.value) {
+    mapResizeObserver = new ResizeObserver(() => {
+      refreshMapTiles()
+    })
+    mapResizeObserver.observe(mapContainer.value)
+  }
 })
 
 onUnmounted(() => {
+  if (mapRefreshTimer) {
+    window.clearTimeout(mapRefreshTimer)
+    mapRefreshTimer = null
+  }
+  mapResizeObserver?.disconnect()
+  mapResizeObserver = null
+  baseTileLayer = null
+
   if (mapInstance) {
+    mapInstance.off('click', handleMapClickForAdd)
     mapInstance.remove()
     mapInstance = null
   }
@@ -529,10 +860,16 @@ onUnmounted(() => {
     </div>
 
     <!-- 地图容器 -->
-    <div ref="mapContainer" class="map-canvas" />
+    <div 
+      ref="mapContainer" 
+      class="map-canvas" 
+      :class="{ 'picking-mode': showAddSpot && addLocationMode === 'click' }" 
+    />
 
     <!-- 手绘纸张纹理覆盖 -->
     <div class="map-paper-overlay" />
+
+
 
     <!-- 公告按钮：详情面板打开时隐藏 -->
     <button v-if="!showDetail && !showAddSpot" class="map-announce-btn" title="公告">
@@ -636,19 +973,21 @@ onUnmounted(() => {
               </svg>
               <span>想去</span>
             </button>
-            <button class="panel-action">
-              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-              </svg>
-              <span>分享</span>
+            <button class="panel-action" @click="() => openInGoogleMaps(selectedLocation)">
+              <span>🗺️</span>
+              <span>Google Maps</span>
+            </button>
+            <button class="panel-action" @click="() => openInAmap(selectedLocation)">
+              <span>🗺️</span>
+              <span>高德地图</span>
             </button>
           </div>
         </div>
       </div>
     </Transition>
 
-    <!-- 添加地点面板 -->
-    <Transition name="panel">
+    <!-- 添加地点面板 (浮动毛玻璃) -->
+    <Transition name="float">
       <div v-if="showAddSpot" class="map-add-panel">
         <button class="panel-back" @click="closeAddSpotPanel">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -658,7 +997,60 @@ onUnmounted(() => {
 
         <div class="map-add-content">
           <h2 class="map-add-title">添加地点</h2>
-          <p class="map-add-subtitle">地点会保存到 Supabase 的 nomad_spots 表，默认使用当前地图中心坐标。</p>
+
+          <!-- 两种方式切换 -->
+          <div class="add-mode-tabs">
+            <button
+              type="button"
+              class="add-mode-tab"
+              :class="{ active: addLocationMode === 'search' }"
+              @click="setAddMode('search')"
+            >
+              🔍 地图搜索
+            </button>
+            <button
+              type="button"
+              class="add-mode-tab"
+              :class="{ active: addLocationMode === 'click' }"
+              @click="setAddMode('click')"
+            >
+              📍 地图选点
+            </button>
+          </div>
+
+          <!-- 地图搜索 -->
+          <div v-if="addLocationMode === 'search'" class="search-linkage">
+            <label class="map-field">
+              <span>搜索地点</span>
+              <input v-model="searchName" type="text" placeholder="例如：加德满都 咖啡馆" @keyup.enter="searchPOI" />
+            </label>
+            <div class="search-toolbar">
+              <select v-model="searchProvider" class="search-provider-select">
+                <option value="amap">高德地图</option>
+                <option value="google">Google Maps</option>
+                <option value="baidu">百度地图</option>
+              </select>
+              <button type="button" class="search-submit-btn" @click="searchPOI" :disabled="isSearching">
+                {{ isSearching ? '搜索中...' : '搜索' }}
+              </button>
+            </div>
+
+            <div v-if="searchResults.length" class="search-results">
+              <div v-for="(r, idx) in searchResults" :key="idx" class="result-item" @click="selectSearchResult(r)">
+                <div class="result-name">{{ r.name }}</div>
+                <div class="result-address">{{ r.address }}</div>
+              </div>
+            </div>
+            <small class="search-hint">
+              选择地图服务搜索，点击结果即可填入坐标和名称。
+            </small>
+          </div>
+
+          <!-- 地图选点 -->
+          <div v-if="addLocationMode === 'click'" class="click-mode-hint">
+            <p>👆 在地图上<strong>点击任意位置</strong>选取坐标</p>
+            <small>可拖动地图后点击，坐标会实时更新</small>
+          </div>
 
           <form class="map-add-form" @submit.prevent="saveSpot">
             <label class="map-field">
@@ -680,30 +1072,25 @@ onUnmounted(() => {
               <textarea v-model="addSpotDescription" rows="4" placeholder="补充 WiFi、插座、价格或适合工作的原因" />
             </label>
 
-            <div class="map-field-grid">
-              <label class="map-field">
-                <span>城市</span>
-                <input v-model="addSpotCity" type="text" placeholder="清迈" />
-              </label>
-              <label class="map-field">
-                <span>国家/地区</span>
-                <input v-model="addSpotCountry" type="text" placeholder="泰国" />
-              </label>
-            </div>
-
-            <label class="map-field">
-              <span>标签</span>
-              <input v-model="addSpotTags" type="text" placeholder="咖啡, WiFi, 安静" />
-            </label>
-
-            <label class="map-field">
-              <span>图片 URL</span>
-              <input v-model="addSpotImage" type="url" placeholder="https://..." />
-            </label>
-
             <div class="map-coordinate-box">
-              <span>坐标</span>
-              <strong>{{ addSpotLat.toFixed(5) }}, {{ addSpotLng.toFixed(5) }}</strong>
+              <span>坐标 (可编辑)</span>
+              <div class="coord-row">
+                <input
+                  v-model.number="addSpotLat"
+                  type="number"
+                  step="0.00001"
+                  class="coord-input"
+                  placeholder="纬度"
+                />
+                <input
+                  v-model.number="addSpotLng"
+                  type="number"
+                  step="0.00001"
+                  class="coord-input"
+                  placeholder="经度"
+                />
+              </div>
+              <div class="coord-hint">可手动微调经纬度</div>
             </div>
 
             <p v-if="addSpotError" class="map-form-error">{{ addSpotError }}</p>
@@ -950,6 +1337,45 @@ onUnmounted(() => {
   width: 20px;
   height: 20px;
   color: #2A9D3E;
+}
+
+/* ============================================
+   添加地点按钮
+   ============================================ */
+.map-add-btn {
+  position: absolute;
+  right: 20px;
+  bottom: 140px;
+  z-index: 1000;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #48A9DE;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s;
+  color: white;
+}
+
+.map-add-btn:hover {
+  background: #3D98C8;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  transform: scale(1.05);
+}
+
+.map-add-btn svg {
+  width: 20px;
+  height: 20px;
+  color: white;
+}
+
+/* 如果未登录，可以给个轻微提示样式（可选） */
+.map-add-btn:not(:hover) {
+  /* 保持默认 */
 }
 
 .map-location-error {
@@ -1240,6 +1666,421 @@ onUnmounted(() => {
   0% { transform: scale(0) translateY(20px); opacity: 0; }
   50% { transform: scale(1.2) translateY(-4px); }
   100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* ============================================
+   添加地点 - 新增解析输入样式
+   ============================================ */
+.location-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.location-input-row input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #E5E5E5;
+  border-radius: 10px;
+  font-size: 14px;
+  background: white;
+}
+
+.location-input-row input:focus {
+  outline: none;
+  border-color: #48A9DE;
+}
+
+.parse-btn {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  background: #48A9DE;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.parse-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.parse-btn:not(:disabled):hover {
+  background: #3D98C8;
+}
+
+.parse-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #48A9DE;
+  font-weight: 500;
+}
+
+.map-coordinate-box {
+  background: #F7F9FB;
+  border: 1px solid #E5E5E5;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.coord-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.coord-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #D0D0D0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: monospace;
+  background: white;
+}
+
+.coord-input:focus {
+  border-color: #48A9DE;
+  outline: none;
+}
+
+.coord-hint {
+  font-size: 11px;
+  color: #8C8C8C;
+  margin-top: 4px;
+}
+
+/* 添加模式点击地图提示 */
+.map-add-hint {
+  position: absolute;
+  top: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1100;
+  background: rgba(72, 169, 222, 0.95);
+  color: white;
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 添加方式切换 */
+.add-mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.add-mode-tab {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #E5E5E5;
+  border-radius: 10px;
+  background: white;
+  font-size: 13px;
+  font-weight: 500;
+  color: #595959;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-mode-tab:hover {
+  border-color: #48A9DE;
+  background: #F0F8FF;
+}
+
+.add-mode-tab.active {
+  border-color: #48A9DE;
+  background: #E8F4FD;
+  color: #1A5276;
+}
+
+/* 点击模式提示 */
+.click-mode-hint {
+  background: #E8F4FD;
+  border: 1px solid #B8DCFF;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.click-mode-hint p {
+  margin: 0;
+  color: #1A5276;
+}
+.click-mode-hint small {
+  color: #5DADE2;
+}
+
+.map-canvas.picking-mode {
+  cursor: crosshair !important;
+}
+
+.search-linkage {
+  background: rgba(248, 249, 250, 0.7);
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.search-linkage .map-field {
+  margin-bottom: 8px;
+}
+
+.search-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.search-provider-select {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #E5E5E5;
+  border-radius: 8px;
+  font-size: 13px;
+  background: white;
+}
+
+.search-submit-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #48A9DE;
+  color: white;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.search-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.search-hint {
+  color: #666;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.search-results {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  background: white;
+}
+
+.result-item {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.result-item:last-child {
+  border-bottom: none;
+}
+
+.result-item:hover {
+  background: #f8f9fa;
+}
+
+.result-name {
+  font-weight: 500;
+  color: #222;
+}
+
+.result-address {
+  font-size: 11px;
+  color: #666;
+  margin-top: 2px;
+}
+
+/* ============================================
+   浮动毛玻璃添加表单
+   ============================================ */
+.map-add-panel {
+  position: absolute;
+  top: 70px;
+  right: 20px;
+  z-index: 1200;
+  width: 380px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 140px);
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12),
+              0 1px 3px rgba(0, 0, 0, 0.06);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.map-add-content {
+  padding: 20px 22px 24px;
+}
+
+/* 关闭按钮在浮动卡片中放到右上 */
+.map-add-panel .panel-back {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: auto;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.map-add-panel .panel-back:hover {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.map-add-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #1A1A1A;
+  margin: 0 0 12px;
+  padding-right: 36px; /* 留给关闭按钮 */
+}
+
+.map-add-subtitle {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+  margin-bottom: 16px;
+}
+
+.map-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.map-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.map-field > span {
+  font-size: 12px;
+  font-weight: 500;
+  color: #444;
+}
+
+.map-field input,
+.map-field select,
+.map-field textarea {
+  padding: 9px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(4px);
+  color: #222;
+  transition: border 0.2s;
+}
+
+.map-field input:focus,
+.map-field select:focus,
+.map-field textarea:focus {
+  outline: none;
+  border-color: #48A9DE;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.map-field textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+.map-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.map-coordinate-box {
+  background: rgba(248, 248, 248, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.coord-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.coord-input {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: ui-monospace, monospace;
+  background: rgba(255,255,255,0.8);
+}
+
+.map-save-btn {
+  margin-top: 8px;
+  padding: 11px 20px;
+  background: #48A9DE;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.map-save-btn:hover:not(:disabled) {
+  background: #3a8bc4;
+  transform: translateY(-1px);
+}
+
+.map-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.map-form-error {
+  color: #e74c3c;
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+/* 浮动面板过渡 */
+.float-enter-active,
+.float-leave-active {
+  transition: all 0.22s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.float-enter-from,
+.float-leave-to {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
 }
 </style>
 
