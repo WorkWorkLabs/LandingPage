@@ -4,6 +4,7 @@
   "description": "Modern Vue3 + TypeScript Landing Page Template",
   "type": "module",
   "scripts": {
+    "predev": "rm -rf node_modules/.vite",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
