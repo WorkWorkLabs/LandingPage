@@ -9,6 +9,7 @@
  */
 
 import { runtimeConfig } from '@/config/app'
+import { searchGooglePlacesByText } from '@/utils/googlePlaces'
 
 export interface ParsedLocation {
   lat: number
@@ -766,11 +767,13 @@ function rankPlaceResults(results: PlaceSearchResult[], query: string): PlaceSea
     }
 
     if (nameText.includes(normalizedQuery)) score += 8
-    if (result.source === 'google') score += 2
+    if (result.source === 'google') score += 6
 
     const combinedText = `${nameText} ${result.address.toLowerCase()}`
     const matchedDistinctive = distinctiveTokens.filter((token) => combinedText.includes(token)).length
-    if (distinctiveTokens.length > 0 && matchedDistinctive === 0) score = 0
+    if (distinctiveTokens.length > 0 && matchedDistinctive === 0 && result.source !== 'google') {
+      score = 0
+    }
 
     return { result, score, matchedDistinctive }
   })
@@ -862,7 +865,7 @@ async function getGooglePlacesService(): Promise<GoogleMapsPlacesService | null>
   return googlePlacesService
 }
 
-async function searchWithGooglePlaces(
+async function searchWithGooglePlacesLegacy(
   query: string,
   bias?: { lat: number; lng: number }
 ): Promise<PlaceSearchResult[]> {
@@ -910,6 +913,31 @@ async function searchWithGooglePlaces(
   }
 
   return []
+}
+
+async function searchWithGooglePlaces(
+  query: string,
+  bias?: { lat: number; lng: number }
+): Promise<PlaceSearchResult[]> {
+  const merged: PlaceSearchResult[] = []
+
+  for (const variant of buildSearchQueryVariants(query)) {
+    const modernResults = await searchGooglePlacesByText(variant, bias)
+    mergePlaceResults(
+      merged,
+      modernResults.map((item) => ({
+        name: item.name,
+        lat: item.lat,
+        lng: item.lng,
+        address: item.address,
+        source: 'google' as const,
+      })),
+      PLACE_SEARCH_LIMIT
+    )
+    if (merged.length) return merged
+  }
+
+  return searchWithGooglePlacesLegacy(query, bias)
 }
 
 async function searchWithAmap(query: string): Promise<PlaceSearchResult[]> {
@@ -1135,6 +1163,9 @@ export async function searchPlaces(
 
   if (provider === 'google' || (provider === 'auto' && keys.googleMapsKey)) {
     results = await searchWithGooglePlaces(trimmed, bias)
+    if (results.length > 0) {
+      return results.slice(0, limit)
+    }
   } else if (provider === 'amap' && keys.amapKey) {
     results = await searchWithAmap(trimmed)
   } else if (provider === 'baidu' && keys.baiduMapKey) {

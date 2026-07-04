@@ -21,6 +21,7 @@ import {
   searchPlaces,
   type PlaceSearchResult,
 } from '@/utils/locationParser'
+import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -35,6 +36,7 @@ const selectedLocation = ref<MapLocation | null>(null)
 const showDetail = ref(false)
 const showAddSpot = ref(false)
 const mapReady = ref(false)
+const mapInitializing = ref(true)
 const mapLoading = ref(false)
 const mapError = ref('')
 const locating = ref(false)
@@ -59,8 +61,32 @@ const searchResults = ref<PlaceSearchResult[]>([])
 const searchEmpty = ref(false)
 const isSearching = ref(false)
 const detailRegionLoading = ref(false)
+const showLoginReminder = ref(false)
+
+const hasGoogleMapsKey = computed(() => Boolean(runtimeConfig.maps.googleMapsKey))
+
+const searchEmptyMessage = computed(() => {
+  if (searchProvider.value === 'google' && hasGoogleMapsKey.value) {
+    return '未找到相关地点。可尝试更简短的关键词、补充城市或地区名，也可以直接粘贴 Google 地图分享链接。'
+  }
+
+  if (hasGoogleMapsKey.value) {
+    return '未找到相关地点。海外地点请切换为 Google Maps 搜索，或粘贴 Google 地图分享链接。'
+  }
+
+  return '未找到相关地点。海外地点建议配置 Google Maps Key 后使用 Google 搜索，或粘贴 Google 地图分享链接。'
+})
+
+const searchHintMessage = computed(() => {
+  if (hasGoogleMapsKey.value) {
+    return '已启用 Google 搜索。也可直接粘贴地图链接，点击结果即可填入坐标和名称。'
+  }
+
+  return '海外地点建议选 Google Maps 并配置 Key；也可直接粘贴地图链接。'
+})
 
 const regionResolveCache = new Map<string, { city: string; country: string }>()
+let loginReminderTimer: number | null = null
 
 // 添加地点方式：地图搜索 | 地图选点
 const addLocationMode = ref<'search' | 'click'>('search')
@@ -71,6 +97,7 @@ let markerGroup: L.LayerGroup | null = null
 let userLocationMarker: L.CircleMarker | null = null
 let mapResizeObserver: ResizeObserver | null = null
 let mapRefreshTimer: number | null = null
+let markerRefreshFrame: number | null = null
 
 function isValidCoord(lat: number, lng: number): boolean {
   return (
@@ -244,9 +271,9 @@ function getUserLocation(): Promise<{ lat: number; lng: number } | null> {
       },
       () => resolve(null),
       {
-        timeout: 10000,
-        maximumAge: 60000,
-        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 120000,
+        enableHighAccuracy: false,
       }
     )
   })
@@ -376,10 +403,9 @@ function syncMapPickMode() {
 async function initMap() {
   if (!mapContainer.value) return
 
-  // 尝试获取用户位置，默认用清迈
-  const userPos = await getUserLocation()
-  const center = userPos ?? { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng }
-  const zoom = userPos ? runtimeConfig.maps.userZoom : runtimeConfig.maps.defaultZoom || DEFAULT_ZOOM
+  mapInitializing.value = true
+  const center = { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng }
+  const zoom = runtimeConfig.maps.defaultZoom || DEFAULT_ZOOM
 
   // CARTO Positron 浅色底图 — 无需 API Key，全球覆盖
   baseTileLayer = L.tileLayer(
@@ -413,14 +439,17 @@ async function initMap() {
   // 添加标记点
   refreshMarkers()
   mapReady.value = true
-
-  if (userPos) {
-    userLocation.value = userPos
-    setUserLocationMarker(userPos)
-    mapInstance.setView([userPos.lat, userPos.lng], runtimeConfig.maps.userZoom)
-  }
+  mapInitializing.value = false
 
   void nextTick(refreshMapTiles)
+
+  // 后台获取用户位置，不阻塞地图首屏
+  void getUserLocation().then((userPos) => {
+    if (!userPos || !mapInstance) return
+    userLocation.value = userPos
+    setUserLocationMarker(userPos)
+    mapInstance.flyTo([userPos.lat, userPos.lng], runtimeConfig.maps.userZoom, { duration: 0.8 })
+  })
 }
 
 function getSpotCategory(tags: string[]): MapCategory {
@@ -552,7 +581,7 @@ function createMarkerIcon(loc: MapLocation): L.DivIcon {
 // ============================================
 // 标记点管理
 // ============================================
-function refreshMarkers() {
+function refreshMarkersNow() {
   if (!markerGroup || !mapInstance) return
   markerGroup.clearLayers()
 
@@ -561,6 +590,17 @@ function refreshMarkers() {
     const marker = L.marker([loc.lat, loc.lng], { icon })
     marker.on('click', () => openDetail(loc))
     markerGroup!.addLayer(marker)
+  })
+}
+
+function refreshMarkers() {
+  if (markerRefreshFrame !== null) {
+    cancelAnimationFrame(markerRefreshFrame)
+  }
+
+  markerRefreshFrame = requestAnimationFrame(() => {
+    markerRefreshFrame = null
+    refreshMarkersNow()
   })
 }
 
@@ -574,12 +614,6 @@ watch([showAddSpot, addLocationMode], () => {
   if (showAddSpot.value) {
     window.setTimeout(refreshMapTiles, 100)
   }
-})
-
-watch(searchResults, () => {
-  void nextTick(() => {
-    window.setTimeout(refreshMapTiles, 50)
-  })
 })
 
 // 坐标变化时更新预览标记
@@ -716,11 +750,30 @@ async function openDetail(loc: MapLocation) {
   }
 }
 
+function dismissLoginReminder() {
+  showLoginReminder.value = false
+  if (loginReminderTimer !== null) {
+    window.clearTimeout(loginReminderTimer)
+    loginReminderTimer = null
+  }
+}
+
+function goToLogin() {
+  dismissLoginReminder()
+  router.push({ name: 'Login', query: { redirect: '/map' } })
+}
+
 function openAddSpotPanel() {
   if (!authStore.isAuthenticated) {
-    router.push({ name: 'Login', query: { redirect: '/map' } })
+    showLoginReminder.value = true
+    if (loginReminderTimer !== null) {
+      window.clearTimeout(loginReminderTimer)
+    }
+    loginReminderTimer = window.setTimeout(dismissLoginReminder, 8000)
     return
   }
+
+  dismissLoginReminder()
 
   const center = mapInstance?.getCenter()
   addSpotLat.value = center?.lat ?? userLocation.value?.lat ?? DEFAULT_CENTER.lat
@@ -832,6 +885,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  dismissLoginReminder()
+  if (markerRefreshFrame !== null) {
+    cancelAnimationFrame(markerRefreshFrame)
+    markerRefreshFrame = null
+  }
   if (mapRefreshTimer) {
     window.clearTimeout(mapRefreshTimer)
     mapRefreshTimer = null
@@ -897,11 +955,15 @@ onUnmounted(() => {
     </div>
 
     <!-- 地图容器 -->
-    <div 
-      ref="mapContainer" 
-      class="map-canvas" 
-      :class="{ 'picking-mode': showAddSpot && addLocationMode === 'click' }" 
+    <div
+      ref="mapContainer"
+      class="map-canvas"
+      :class="{ 'picking-mode': showAddSpot && addLocationMode === 'click' }"
     />
+
+    <div v-if="mapInitializing" class="map-init-overlay">
+      <LoadingSpinner size="lg" text="地图加载中..." />
+    </div>
 
     <!-- 手绘纸张纹理覆盖 -->
     <div class="map-paper-overlay" />
@@ -933,22 +995,48 @@ onUnmounted(() => {
       <button
         class="map-locate-btn"
         :class="{ locating }"
+        :disabled="locating"
         :title="userLocation ? '回到我的位置' : '定位到我附近'"
         aria-label="定位到我附近"
         @click="locateMe({ animate: true })"
       >
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <LoadingSpinner v-if="locating" size="sm" label="定位中" />
+        <svg v-else fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l2.5 2.5M12 2v3m0 14v3m10-10h-3M5 12H2m16.95-6.95l-2.12 2.12M7.17 16.83l-2.12 2.12m0-13.9l2.12 2.12m9.66 9.66l2.12 2.12" />
         </svg>
       </button>
     </div>
+
+    <Transition name="login-reminder">
+      <div
+        v-if="showLoginReminder && !showDetail && !showAddSpot"
+        class="map-login-reminder"
+        role="alert"
+      >
+        <div class="map-login-reminder-content">
+          <p class="map-login-reminder-title">请先登录</p>
+          <p class="map-login-reminder-text">添加地点需要登录账号，登录后可继续标记和分享你的游牧据点。</p>
+        </div>
+        <div class="map-login-reminder-actions">
+          <button type="button" class="map-login-reminder-btn" @click="goToLogin">立即登录</button>
+          <button
+            type="button"
+            class="map-login-reminder-close"
+            aria-label="关闭提示"
+            @click="dismissLoginReminder"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    </Transition>
 
     <div v-if="(locationError || mapError) && !showDetail && !showAddSpot" class="map-location-error">
       {{ locationError || mapError }}
     </div>
 
     <div v-if="mapLoading && !showDetail && !showAddSpot" class="map-data-status">
-      正在加载地图数据...
+      <LoadingSpinner size="sm" text="加载地点数据..." inline />
     </div>
 
     <!-- 侧边详情面板 -->
@@ -982,7 +1070,9 @@ onUnmounted(() => {
           <h2 class="panel-title">{{ selectedLocation.name }}</h2>
           <p class="panel-location">
             📍
-            <span v-if="detailRegionLoading">正在识别位置...</span>
+            <span v-if="detailRegionLoading" class="panel-location-loading">
+              <LoadingSpinner size="sm" text="识别城市中..." inline />
+            </span>
             <span v-else>{{ selectedLocation.city }}，{{ selectedLocation.country }}</span>
           </p>
 
@@ -1074,8 +1164,13 @@ onUnmounted(() => {
                 <option value="baidu">百度地图</option>
               </select>
               <button type="button" class="search-submit-btn" @click="searchPOI" :disabled="isSearching">
-                {{ isSearching ? '搜索中...' : '搜索' }}
+                <LoadingSpinner v-if="isSearching" size="sm" inline label="搜索中" />
+                <span>{{ isSearching ? '搜索中' : '搜索' }}</span>
               </button>
+            </div>
+
+            <div v-if="isSearching && !searchResults.length" class="search-loading">
+              <LoadingSpinner size="md" text="正在搜索地点..." />
             </div>
 
             <div v-if="searchResults.length" class="search-results">
@@ -1085,10 +1180,10 @@ onUnmounted(() => {
               </div>
             </div>
             <p v-else-if="searchEmpty && !isSearching" class="search-empty">
-              未找到匹配地点。海外小众 POI 建议配置 Google Maps Key、切换为 Google 搜索，或直接粘贴 Google 地图链接。
+              {{ searchEmptyMessage }}
             </p>
             <small class="search-hint">
-              海外地点建议选 Google Maps；也可直接粘贴地图链接。点击结果即可填入坐标和名称。
+              {{ searchHintMessage }}
             </small>
           </div>
 
@@ -1121,7 +1216,8 @@ onUnmounted(() => {
             <p v-if="addSpotError" class="map-form-error">{{ addSpotError }}</p>
 
             <button class="map-save-btn" type="submit" :disabled="savingSpot">
-              {{ savingSpot ? '保存中...' : '保存地点' }}
+              <LoadingSpinner v-if="savingSpot" size="sm" inline label="保存中" />
+              <span>{{ savingSpot ? '保存中' : '保存地点' }}</span>
             </button>
           </form>
         </div>
@@ -1152,6 +1248,32 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   z-index: 0;
+}
+
+.map-init-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(248, 245, 240, 0.82);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.map-data-status {
+  position: absolute;
+  left: 16px;
+  bottom: 28px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
 /* 手绘纸张覆盖层 */
@@ -1455,6 +1577,95 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.map-login-reminder {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(92vw, 420px);
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(72, 169, 222, 0.22);
+  box-shadow: 0 8px 28px rgba(26, 26, 26, 0.14);
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+}
+
+.map-login-reminder-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.map-login-reminder-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+
+.map-login-reminder-text {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #595959;
+}
+
+.map-login-reminder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.map-login-reminder-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: #48A9DE;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.map-login-reminder-btn:hover {
+  background: #3D98C8;
+}
+
+.map-login-reminder-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: #F3F6F8;
+  color: #8C8C8C;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.map-login-reminder-close:hover {
+  background: #E8EDF1;
+  color: #595959;
+}
+
+.login-reminder-enter-active,
+.login-reminder-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.login-reminder-enter-from,
+.login-reminder-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px);
+}
+
 .map-location-error {
   position: absolute;
   right: 16px;
@@ -1519,6 +1730,17 @@ onUnmounted(() => {
   .map-location-error {
     bottom: 264px;
     right: 12px;
+  }
+
+  .map-login-reminder {
+    bottom: 20px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .map-login-reminder-actions {
+    justify-content: space-between;
   }
 }
 
@@ -1966,6 +2188,10 @@ onUnmounted(() => {
 }
 
 .search-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 8px 14px;
   border: none;
   border-radius: 8px;
@@ -1975,6 +2201,16 @@ onUnmounted(() => {
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.search-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .search-submit-btn:disabled {
@@ -2139,7 +2375,17 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+.panel-location-loading {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
 .map-save-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin-top: 8px;
   padding: 11px 20px;
   background: #48A9DE;
