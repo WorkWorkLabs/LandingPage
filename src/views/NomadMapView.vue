@@ -915,30 +915,33 @@ onUnmounted(() => {
       </svg>
     </button>
 
-    <!-- 定位按钮：详情面板打开时隐藏 -->
-    <button
-      v-if="!showDetail"
-      class="map-locate-btn"
-      :class="{ locating }"
-      :title="userLocation ? '回到我的位置' : '定位到我附近'"
-      @click="locateMe({ animate: true })"
-    >
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l2.5 2.5M12 2v3m0 14v3m10-10h-3M5 12H2m16.95-6.95l-2.12 2.12M7.17 16.83l-2.12 2.12m0-13.9l2.12 2.12m9.66 9.66l2.12 2.12" />
-      </svg>
-    </button>
+    <!-- 右侧悬浮操作区：添加地点 + 定位 -->
+    <div v-if="!showDetail" class="map-fab-group">
+      <button
+        v-if="!showAddSpot"
+        class="map-add-btn"
+        :title="authStore.isAuthenticated ? '添加地点' : '登录后添加地点'"
+        :aria-label="authStore.isAuthenticated ? '添加地点' : '登录后添加地点'"
+        @click="openAddSpotPanel"
+      >
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 5v14M5 12h14" />
+        </svg>
+        <span class="map-add-btn-text">添加地点</span>
+      </button>
 
-    <!-- 添加地点按钮：详情面板打开时隐藏 -->
-    <button
-      v-if="!showDetail && !showAddSpot"
-      class="map-add-btn"
-      :title="authStore.isAuthenticated ? '添加当前位置为地点' : '登录后添加地点'"
-      @click="openAddSpotPanel"
-    >
-      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14M5 12h14" />
-      </svg>
-    </button>
+      <button
+        class="map-locate-btn"
+        :class="{ locating }"
+        :title="userLocation ? '回到我的位置' : '定位到我附近'"
+        aria-label="定位到我附近"
+        @click="locateMe({ animate: true })"
+      >
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l2.5 2.5M12 2v3m0 14v3m10-10h-3M5 12H2m16.95-6.95l-2.12 2.12M7.17 16.83l-2.12 2.12m0-13.9l2.12 2.12m9.66 9.66l2.12 2.12" />
+        </svg>
+      </button>
+    </div>
 
     <div v-if="(locationError || mapError) && !showDetail && !showAddSpot" class="map-location-error">
       {{ locationError || mapError }}
@@ -1357,28 +1360,38 @@ onUnmounted(() => {
 }
 
 /* ============================================
+   右侧悬浮操作区
+   ============================================ */
+.map-fab-group {
+  position: absolute;
+  right: 16px;
+  bottom: 132px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+/* ============================================
    定位按钮
    ============================================ */
 .map-locate-btn {
-  position: absolute;
-  right: 20px;
-  bottom: 88px;
-  z-index: 1000;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: white;
-  border: none;
+  border: 2px solid rgba(42, 157, 62, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  transition: all 0.2s;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .map-locate-btn:hover {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
   transform: scale(1.05);
 }
 
@@ -1391,8 +1404,8 @@ onUnmounted(() => {
 }
 
 .map-locate-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   color: #2A9D3E;
 }
 
@@ -1400,45 +1413,52 @@ onUnmounted(() => {
    添加地点按钮
    ============================================ */
 .map-add-btn {
-  position: absolute;
-  right: 20px;
-  bottom: 140px;
-  z-index: 1000;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: #48A9DE;
-  border: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
+  height: 50px;
+  padding: 0 20px 0 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2A9D3E 0%, #35B84A 55%, #48A9DE 100%);
+  border: 2px solid rgba(255, 255, 255, 0.95);
   cursor: pointer;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
-  transition: all 0.2s;
+  box-shadow:
+    0 4px 18px rgba(42, 157, 62, 0.42),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+  transition: transform 0.2s, box-shadow 0.2s;
   color: white;
+  animation: map-add-pulse 2.8s ease-in-out infinite;
 }
 
 .map-add-btn:hover {
-  background: #3D98C8;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  transform: scale(1.05);
+  transform: translateY(-2px) scale(1.03);
+  box-shadow:
+    0 8px 24px rgba(42, 157, 62, 0.5),
+    0 4px 12px rgba(0, 0, 0, 0.14);
+}
+
+.map-add-btn:active {
+  transform: scale(0.98);
 }
 
 .map-add-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   color: white;
+  flex-shrink: 0;
 }
 
-/* 如果未登录，可以给个轻微提示样式（可选） */
-.map-add-btn:not(:hover) {
-  /* 保持默认 */
+.map-add-btn-text {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .map-location-error {
   position: absolute;
-  right: 20px;
-  bottom: 140px;
+  right: 16px;
+  bottom: 248px;
   z-index: 1000;
   max-width: 180px;
   padding: 8px 12px;
@@ -1453,6 +1473,52 @@ onUnmounted(() => {
 @keyframes locate-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes map-add-pulse {
+  0%, 100% {
+    box-shadow:
+      0 4px 18px rgba(42, 157, 62, 0.42),
+      0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+  50% {
+    box-shadow:
+      0 6px 26px rgba(42, 157, 62, 0.55),
+      0 2px 10px rgba(0, 0, 0, 0.14);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-add-btn {
+    animation: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .map-fab-group {
+    right: 12px;
+    bottom: 148px;
+    gap: 10px;
+  }
+
+  .map-add-btn {
+    height: 48px;
+    padding: 0 16px 0 14px;
+  }
+
+  .map-add-btn-text {
+    font-size: 14px;
+  }
+
+  .map-locate-btn {
+    width: 46px;
+    height: 46px;
+  }
+
+  .map-location-error {
+    bottom: 264px;
+    right: 12px;
   }
 }
 

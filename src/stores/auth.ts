@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { supabase } from '@/lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 import type { Profile } from '@/types/database'
-import { getAuthRedirectUrl } from '@/config/app'
+import { getAuthRedirectUrl, hasSupabaseConfig } from '@/config/app'
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -22,6 +22,11 @@ export const useAuthStore = defineStore('auth', () => {
   // Initialize auth state
   async function initialize() {
     if (initialized.value) return
+
+    if (!hasSupabaseConfig()) {
+      initialized.value = true
+      return
+    }
 
     loading.value = true
     try {
