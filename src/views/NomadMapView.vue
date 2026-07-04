@@ -12,9 +12,15 @@ import {
   type MapCategory,
 } from '@/constants/map'
 import { runtimeConfig } from '@/config/app'
-import { createNomadSpot, fetchActiveNomadSpots } from '@/services/nomadSpots'
+import { createNomadSpot, fetchActiveNomadSpots, updateNomadSpotRegion } from '@/services/nomadSpots'
 import type { NomadSpot } from '@/types/database'
-import { geocode, gcj02ToWgs84, bd09ToWgs84 } from '@/utils/locationParser'
+import {
+  geocode,
+  reverseGeocode,
+  resolveLocation,
+  searchPlaces,
+  type PlaceSearchResult,
+} from '@/utils/locationParser'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -46,20 +52,18 @@ const addSpotLng = ref(DEFAULT_CENTER.lng)
 const searchName = ref('')
 
 // 搜索提供商和结果
-const searchProvider = ref<'google' | 'amap' | 'baidu'>('amap')
-const searchResults = ref<SearchResultItem[]>([])
+const searchProvider = ref<'google' | 'amap' | 'baidu'>(
+  runtimeConfig.maps.googleMapsKey ? 'google' : runtimeConfig.maps.amapKey ? 'amap' : 'google'
+)
+const searchResults = ref<PlaceSearchResult[]>([])
+const searchEmpty = ref(false)
 const isSearching = ref(false)
+const detailRegionLoading = ref(false)
+
+const regionResolveCache = new Map<string, { city: string; country: string }>()
 
 // 添加地点方式：地图搜索 | 地图选点
 const addLocationMode = ref<'search' | 'click'>('search')
-interface SearchResultItem {
-  name: string
-  lat: number
-  lng: number
-  address: string
-  source: string
-}
-
 let addPreviewMarker: L.Marker | null = null
 let mapInstance: L.Map | null = null
 let baseTileLayer: L.TileLayer | null = null
@@ -430,8 +434,58 @@ function getDisplayTags(tags: string[]): string[] {
   return tags.filter((tag) => !tag.startsWith('category:'))
 }
 
+function isUnknownRegion(city?: string | null, country?: string | null): boolean {
+  const cityValue = city?.trim() ?? ''
+  const countryValue = country?.trim() ?? ''
+  return !cityValue || cityValue === '未知城市' || !countryValue || countryValue === '未知国家'
+}
+
+function isPersistedSpot(id: string): boolean {
+  return !/^\d+$/.test(id)
+}
+
+function applyLocationRegion(loc: MapLocation, city: string, country: string) {
+  loc.city = city
+  loc.country = country
+  regionResolveCache.set(loc.id, { city, country })
+
+  const index = locations.value.findIndex((item) => item.id === loc.id)
+  if (index >= 0) {
+    locations.value[index] = { ...locations.value[index], city, country }
+  }
+
+  if (selectedLocation.value?.id === loc.id) {
+    selectedLocation.value = { ...selectedLocation.value, city, country }
+  }
+}
+
+async function resolveLocationRegion(
+  loc: MapLocation,
+  provider: typeof searchProvider.value = searchProvider.value
+): Promise<{ city: string; country: string } | null> {
+  const cached = regionResolveCache.get(loc.id)
+  if (cached) return cached
+
+  if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return null
+
+  const result = await reverseGeocode(loc.lat, loc.lng, provider)
+  if (!result || (!result.city && !result.country)) return null
+
+  const city = result.city || loc.city
+  const country = result.country || loc.country
+  applyLocationRegion(loc, city, country)
+
+  if (isPersistedSpot(loc.id)) {
+    void updateNomadSpotRegion(loc.id, city, country)
+  }
+
+  return { city, country }
+}
+
 function mapSpotToLocation(spot: NomadSpot): MapLocation {
   const tags = spot.tags ?? []
+  const city = spot.city?.trim() || '未知城市'
+  const country = spot.country?.trim() || '未知国家'
 
   return {
     id: spot.id,
@@ -440,8 +494,8 @@ function mapSpotToLocation(spot: NomadSpot): MapLocation {
     category: getSpotCategory(tags),
     lat: Number(spot.latitude),
     lng: Number(spot.longitude),
-    city: spot.city ?? '未知城市',
-    country: spot.country ?? '未知国家',
+    city,
+    country,
     images: spot.images ?? [],
     author: { name: 'WorkWork 游民', avatar: '' },
     likes: Math.round(Number(spot.rating ?? 0)),
@@ -569,137 +623,97 @@ function openInBaidu(loc: MapLocation) {
 
 // 使用 POI API 在页面内搜索并显示结果列表
 async function searchPOI() {
-  const query = searchName.value.trim();
-  if (!query) return;
+  const query = searchName.value.trim()
+  if (!query) return
 
-  isSearching.value = true;
-  searchResults.value = [];
-
-  const keys = runtimeConfig.maps;
-  let results: SearchResultItem[] = [];
+  isSearching.value = true
+  searchResults.value = []
+  searchEmpty.value = false
 
   try {
-    if (searchProvider.value === 'amap' && keys.amapKey) {
-      const url = `https://restapi.amap.com/v3/place/text?keywords=${encodeURIComponent(query)}&key=${keys.amapKey}&offset=10&extensions=all`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.status === '1' && data.pois) {
-        results = data.pois.flatMap((p: { name: string; location?: string; address?: string; pname?: string; cityname?: string; adname?: string }) => {
-          if (!p.location) return []
-          const [lng, lat] = p.location.split(',').map(Number)
-          if (!isValidCoord(lat, lng)) return []
-          const [wgsLng, wgsLat] = gcj02ToWgs84(lng, lat)
-          if (!isValidCoord(wgsLat, wgsLng)) return []
-          return [{
-            name: p.name,
-            lat: wgsLat,
-            lng: wgsLng,
-            address: p.address || `${p.pname ?? ''}${p.cityname ?? ''}${p.adname ?? ''}`,
-            source: 'amap'
-          }]
-        })
-      }
-    } else if (searchProvider.value === 'baidu' && keys.baiduMapKey) {
-      const url = `https://api.map.baidu.com/place/v2/search?query=${encodeURIComponent(query)}&region=全国&output=json&ak=${keys.baiduMapKey}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.status === 0 && data.results) {
-        results = data.results.flatMap((r: { name: string; location: { lat: number; lng: number }; address?: string; city?: string; area?: string; province?: string }) => {
-          const lat = r.location.lat;
-          const lng = r.location.lng;
-          if (!isValidCoord(lat, lng)) return []
-          const [wgsLng, wgsLat] = bd09ToWgs84(lng, lat);
-          if (!isValidCoord(wgsLat, wgsLng)) return []
-          return [{
-            name: r.name,
-            lat: wgsLat,
-            lng: wgsLng,
-            address: r.address || '',
-            source: 'baidu'
-          }]
-        })
-      }
-    } else if (searchProvider.value === 'google' && keys.googleMapsKey) {
-      // Google Text Search - may have CORS, fallback if fails
-      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${keys.googleMapsKey}`;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.status === 'OK' && data.results) {
-          results = data.results.slice(0, 10).flatMap((r: { name: string; geometry: { location: { lat: number; lng: number } }; formatted_address?: string }) => {
-            const lat = r.geometry.location.lat
-            const lng = r.geometry.location.lng
-            if (!isValidCoord(lat, lng)) return []
-            return [{
-              name: r.name,
-              lat,
-              lng,
-              address: r.formatted_address || '',
-              source: 'google'
-            }]
-          })
-        }
-      } catch (e) {
-        // CORS likely, fallback to geocode
-        console.warn('Google Places CORS, falling back to geocode');
-      }
+    const center = mapInstance?.getCenter()
+    const bias = {
+      lat: center?.lat ?? addSpotLat.value,
+      lng: center?.lng ?? addSpotLng.value,
     }
 
-    // Fallback to our geocode if no results or no key
-    if (results.length === 0) {
-      const geo = await geocode(query);
-      if (geo && isValidCoord(geo.lat, geo.lng)) {
-        results = [{
-          name: geo.name || query,
-          lat: geo.lat,
-          lng: geo.lng,
+    // 支持直接粘贴 Google/高德/百度地图链接
+    if (/^https?:\/\//i.test(query) || query.includes('maps.app.goo.gl') || query.includes('goo.gl/maps')) {
+      const resolved = await resolveLocation(query, bias)
+      if (resolved && isValidCoord(resolved.lat, resolved.lng)) {
+        searchResults.value = [{
+          name: resolved.name || query,
+          lat: resolved.lat,
+          lng: resolved.lng,
           address: '',
-          source: 'geocode'
-        }];
+          source: resolved.source === 'google' || resolved.source === 'amap' || resolved.source === 'baidu'
+            ? resolved.source
+            : 'geocode',
+        }]
+        searchEmpty.value = false
+        return
       }
     }
 
-    searchResults.value = results;
+    const results = await searchPlaces(query, {
+      provider: searchProvider.value,
+      bias,
+    })
+
+    searchResults.value = results
+    searchEmpty.value = results.length === 0
   } catch (e) {
-    console.error('Search failed', e);
-    // final fallback
-    const geo = await geocode(query);
+    console.error('Search failed', e)
+    const geo = await geocode(query)
     if (geo && isValidCoord(geo.lat, geo.lng)) {
       searchResults.value = [{
         name: geo.name || query,
         lat: geo.lat,
         lng: geo.lng,
         address: '',
-        source: 'geocode'
-      }];
+        source: 'geocode',
+      }]
+      searchEmpty.value = false
+    } else {
+      searchEmpty.value = true
     }
   } finally {
-    isSearching.value = false;
+    isSearching.value = false
     void nextTick(() => {
       window.setTimeout(refreshMapTiles, 50)
     })
   }
 }
 
-function selectSearchResult(result: SearchResultItem) {
-  if (!isValidCoord(result.lat, result.lng)) {
-    addSpotError.value = '该搜索结果坐标无效，请换一条或改用地图选点'
-    return
-  }
-
+function selectSearchResult(result: PlaceSearchResult) {
   addSpotLat.value = result.lat;
   addSpotLng.value = result.lng;
   addSpotError.value = ''
   if (!addSpotName.value.trim()) {
     addSpotName.value = result.name;
   }
-  updateAddPreviewMarker();
-  focusMapOnPoint(result.lat, result.lng, 16)
+  if (Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
+    updateAddPreviewMarker();
+    if (mapInstance) {
+      mapInstance.flyTo([result.lat, result.lng], 16, { duration: 0.6 })
+      mapInstance.once('moveend', refreshMapTiles)
+      window.setTimeout(refreshMapTiles, 800)
+    }
+  }
 }
 
-function openDetail(loc: MapLocation) {
+async function openDetail(loc: MapLocation) {
   selectedLocation.value = loc
   showDetail.value = true
+
+  if (isUnknownRegion(loc.city, loc.country)) {
+    detailRegionLoading.value = true
+    try {
+      await resolveLocationRegion(loc)
+    } finally {
+      detailRegionLoading.value = false
+    }
+  }
 }
 
 function openAddSpotPanel() {
@@ -759,12 +773,22 @@ async function saveSpot() {
   savingSpot.value = true
   addSpotError.value = ''
 
+  let spotCity = ''
+  let spotCountry = ''
+  const region = await reverseGeocode(addSpotLat.value, addSpotLng.value, searchProvider.value)
+  if (region) {
+    spotCity = region.city
+    spotCountry = region.country
+  }
+
   const { data, error } = await createNomadSpot({
     creatorId: authStore.user.id,
     name: addSpotName.value.trim(),
     description: addSpotDescription.value.trim(),
     latitude: addSpotLat.value,
     longitude: addSpotLng.value,
+    city: spotCity,
+    country: spotCountry,
     tags: getSpotTags(),
   })
 
@@ -826,24 +850,37 @@ onUnmounted(() => {
 
 <template>
   <div class="map-page">
-    <!-- 顶部搜索栏 -->
-    <div class="map-topbar">
-      <div class="map-search">
-        <svg class="map-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="搜索地点、城市或标签..."
-          class="map-search-input"
-        />
-      </div>
-      <button class="map-menu-btn" title="菜单">
+    <!-- 顶部栏：详情页显示返回，否则显示搜索 -->
+    <div class="map-topbar" :class="{ 'map-topbar--detail': showDetail }">
+      <button
+        v-if="showDetail"
+        type="button"
+        class="map-back-btn"
+        @click="closeDetail"
+      >
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
         </svg>
+        <span>返回地图</span>
       </button>
+      <template v-else>
+        <div class="map-search">
+          <svg class="map-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="搜索地点、城市或标签..."
+            class="map-search-input"
+          />
+        </div>
+        <button class="map-menu-btn" title="返回首页" @click="router.push('/')">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+        </button>
+      </template>
     </div>
 
     <!-- 分类筛选：详情面板打开时隐藏 -->
@@ -915,10 +952,11 @@ onUnmounted(() => {
     <Transition name="panel">
       <div v-if="showDetail && selectedLocation" class="map-detail-panel">
         <!-- 返回按钮（面板左上角） -->
-        <button class="panel-back" @click="closeDetail">
+        <button class="panel-back" type="button" title="返回地图" aria-label="返回地图" @click="closeDetail">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
+          <span class="panel-back-label">返回</span>
         </button>
 
         <div v-if="selectedLocation.images.length > 0" class="panel-cover">
@@ -940,7 +978,9 @@ onUnmounted(() => {
 
           <h2 class="panel-title">{{ selectedLocation.name }}</h2>
           <p class="panel-location">
-            📍 {{ selectedLocation.city }}，{{ selectedLocation.country }}
+            📍
+            <span v-if="detailRegionLoading">正在识别位置...</span>
+            <span v-else>{{ selectedLocation.city }}，{{ selectedLocation.country }}</span>
           </p>
 
           <div class="panel-author">
@@ -1041,8 +1081,11 @@ onUnmounted(() => {
                 <div class="result-address">{{ r.address }}</div>
               </div>
             </div>
+            <p v-else-if="searchEmpty && !isSearching" class="search-empty">
+              未找到匹配地点。海外小众 POI 建议配置 Google Maps Key、切换为 Google 搜索，或直接粘贴 Google 地图链接。
+            </p>
             <small class="search-hint">
-              选择地图服务搜索，点击结果即可填入坐标和名称。
+              海外地点建议选 Google Maps；也可直接粘贴地图链接。点击结果即可填入坐标和名称。
             </small>
           </div>
 
@@ -1072,27 +1115,6 @@ onUnmounted(() => {
               <textarea v-model="addSpotDescription" rows="4" placeholder="补充 WiFi、插座、价格或适合工作的原因" />
             </label>
 
-            <div class="map-coordinate-box">
-              <span>坐标 (可编辑)</span>
-              <div class="coord-row">
-                <input
-                  v-model.number="addSpotLat"
-                  type="number"
-                  step="0.00001"
-                  class="coord-input"
-                  placeholder="纬度"
-                />
-                <input
-                  v-model.number="addSpotLng"
-                  type="number"
-                  step="0.00001"
-                  class="coord-input"
-                  placeholder="经度"
-                />
-              </div>
-              <div class="coord-hint">可手动微调经纬度</div>
-            </div>
-
             <p v-if="addSpotError" class="map-form-error">{{ addSpotError }}</p>
 
             <button class="map-save-btn" type="submit" :disabled="savingSpot">
@@ -1117,6 +1139,7 @@ onUnmounted(() => {
 .map-page {
   position: fixed;
   inset: 0;
+  z-index: 40;
   background: #F8F5F0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   overflow: hidden;
@@ -1153,11 +1176,45 @@ onUnmounted(() => {
   top: 16px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: 1200;
   display: flex;
   align-items: center;
   gap: 12px;
   width: min(90%, 480px);
+}
+
+.map-topbar--detail {
+  left: 16px;
+  transform: none;
+  width: auto;
+  max-width: calc(100vw - 32px);
+}
+
+.map-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 24px;
+  background: white;
+  color: #262626;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s;
+}
+
+.map-back-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.map-back-btn:hover {
+  color: #48A9DE;
+  box-shadow: 0 4px 20px rgba(72, 169, 222, 0.2);
 }
 
 .map-search {
@@ -1459,41 +1516,64 @@ onUnmounted(() => {
   right: 0;
   bottom: 0;
   z-index: 1100;
-  width: min(400px, 90vw);
+  width: min(400px, 100vw);
+  max-width: 100%;
   background: white;
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
   overflow-y: auto;
   overflow-x: hidden;
 }
 
-.panel-back {
+@media (max-width: 768px) {
+  .map-detail-panel {
+    width: 100vw;
+    box-shadow: none;
+  }
+
+  .map-topbar--detail {
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(90%, 480px);
+  }
+}
+
+.map-detail-panel .panel-back {
   position: absolute;
   top: 12px;
   left: 12px;
-  z-index: 5;
-  width: 36px;
+  z-index: 20;
+  min-width: 36px;
   height: 36px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
+  padding: 0 12px 0 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(4px);
   border: none;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
 }
 
-.panel-back:hover {
+.map-detail-panel .panel-back:hover {
   background: white;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  color: #48A9DE;
+  box-shadow: 0 4px 16px rgba(72, 169, 222, 0.2);
 }
 
-.panel-back svg {
+.map-detail-panel .panel-back svg {
   width: 18px;
   height: 18px;
-  color: #595959;
+  color: inherit;
+}
+
+.panel-back-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
 }
 
 .panel-cover {
@@ -1722,41 +1802,6 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.map-coordinate-box {
-  background: #F7F9FB;
-  border: 1px solid #E5E5E5;
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 13px;
-}
-
-.coord-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.coord-input {
-  flex: 1;
-  padding: 6px 10px;
-  border: 1px solid #D0D0D0;
-  border-radius: 8px;
-  font-size: 13px;
-  font-family: monospace;
-  background: white;
-}
-
-.coord-input:focus {
-  border-color: #48A9DE;
-  outline: none;
-}
-
-.coord-hint {
-  font-size: 11px;
-  color: #8C8C8C;
-  margin-top: 4px;
-}
-
 /* 添加模式点击地图提示 */
 .map-add-hint {
   position: absolute;
@@ -1875,6 +1920,16 @@ onUnmounted(() => {
   color: #666;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.search-empty {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff8e6;
+  color: #8a6d1d;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .search-results {
@@ -2016,30 +2071,6 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-}
-
-.map-coordinate-box {
-  background: rgba(248, 248, 248, 0.6);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 13px;
-}
-
-.coord-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.coord-input {
-  flex: 1;
-  padding: 5px 8px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 6px;
-  font-size: 13px;
-  font-family: ui-monospace, monospace;
-  background: rgba(255,255,255,0.8);
 }
 
 .map-save-btn {

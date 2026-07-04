@@ -51,3 +51,16 @@ export async function createNomadSpot(input: CreateNomadSpotInput): Promise<{ da
 
   return { data, error: null }
 }
+
+export async function updateNomadSpotRegion(
+  spotId: string,
+  city: string,
+  country: string
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('nomad_spots')
+    .update({ city: city || null, country: country || null })
+    .eq('id', spotId)
+
+  return { error: error?.message ?? null }
+}

@@ -23,3 +23,36 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+interface GoogleMapsPlaceGeometry {
+  location?: { lat: () => number; lng: () => number }
+}
+
+interface GoogleMapsPlaceResult {
+  name?: string
+  formatted_address?: string
+  geometry?: GoogleMapsPlaceGeometry
+}
+
+interface GoogleMapsPlacesService {
+  textSearch(
+    request: { query: string; location?: { lat: number; lng: number }; radius?: number },
+    callback: (results: GoogleMapsPlaceResult[] | null, status: string) => void
+  ): void
+}
+
+interface GoogleMapsPlacesLibrary {
+  PlacesService: new (element: HTMLElement) => GoogleMapsPlacesService
+  PlacesServiceStatus: { OK: string }
+}
+
+interface GoogleMapsNamespace {
+  maps: {
+    places: GoogleMapsPlacesLibrary
+  }
+}
+
+interface Window {
+  google?: GoogleMapsNamespace
+  __gmapsPlacesInit?: () => void
+}

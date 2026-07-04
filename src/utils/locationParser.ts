@@ -697,3 +697,453 @@ export async function resolveLocation(
   // 最后走地理编码
   return await geocode(trimmed)
 }
+
+// ============================================
+// 地点搜索 (POI Search)
+// ============================================
+
+export interface PlaceSearchResult {
+  name: string
+  lat: number
+  lng: number
+  address: string
+  source: 'google' | 'amap' | 'baidu' | 'photon' | 'nominatim' | 'geocode'
+}
+
+export type PlaceSearchProvider = 'google' | 'amap' | 'baidu' | 'auto'
+
+export interface PlaceSearchOptions {
+  provider?: PlaceSearchProvider
+  bias?: { lat: number; lng: number }
+  limit?: number
+}
+
+const NOMINATIM_HEADERS = { 'User-Agent': 'WorkWork-NomadMap/1.0' }
+const PLACE_SEARCH_LIMIT = 10
+
+let googlePlacesScriptPromise: Promise<GoogleMapsNamespace | null> | null = null
+let googlePlacesService: GoogleMapsPlacesService | null = null
+
+function isValidPlaceCoord(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)
+}
+
+function placeResultKey(result: PlaceSearchResult): string {
+  return `${result.name.toLowerCase()}|${result.lat.toFixed(4)}|${result.lng.toFixed(4)}`
+}
+
+function tokenizeSearchText(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff\s]/gi, ' ')
+    .split(/\s+/)
+    .filter((token) => token.length > 1)
+}
+
+const COMMON_PLACE_WORDS = new Set([
+  'the', 'and', 'market', 'night', 'serviced', 'apartments', 'apartment', 'street', 'road',
+  'city', 'town', 'center', 'centre', 'mall', 'hotel', 'restaurant', 'cafe', 'coffee',
+])
+
+/** 按名称与搜索词重合度排序，减少 Photon 误匹配 */
+function rankPlaceResults(results: PlaceSearchResult[], query: string): PlaceSearchResult[] {
+  const normalizedQuery = normalizeSearchQuery(query).toLowerCase()
+  const queryTokens = tokenizeSearchText(normalizedQuery)
+  if (!queryTokens.length) return results
+
+  const distinctiveTokens = queryTokens.filter(
+    (token) => token.length >= 4 && !COMMON_PLACE_WORDS.has(token)
+  )
+
+  const scored = results.map((result) => {
+    const nameText = result.name.toLowerCase()
+    const addressTokens = tokenizeSearchText(result.address)
+    let score = 0
+
+    for (const token of queryTokens) {
+      if (nameText.includes(token)) score += 3
+      else if (addressTokens.some((addressToken) => addressToken.includes(token))) score += 1
+    }
+
+    if (nameText.includes(normalizedQuery)) score += 8
+    if (result.source === 'google') score += 2
+
+    const combinedText = `${nameText} ${result.address.toLowerCase()}`
+    const matchedDistinctive = distinctiveTokens.filter((token) => combinedText.includes(token)).length
+    if (distinctiveTokens.length > 0 && matchedDistinctive === 0) score = 0
+
+    return { result, score, matchedDistinctive }
+  })
+
+  scored.sort((a, b) => b.score - a.score)
+
+  const minScore = Math.max(3, distinctiveTokens.length > 0 ? 4 : 2)
+  const filtered = scored.filter((item) => item.score >= minScore)
+
+  return filtered.map((item) => item.result)
+}
+
+function mergePlaceResults(target: PlaceSearchResult[], incoming: PlaceSearchResult[], limit: number): void {
+  const seen = new Set(target.map(placeResultKey))
+  for (const item of incoming) {
+    if (!isValidPlaceCoord(item.lat, item.lng)) continue
+    const key = placeResultKey(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    target.push(item)
+    if (target.length >= limit) break
+  }
+}
+
+/** 清理搜索词：去掉 @、多余空格和常见 filler */
+function normalizeSearchQuery(query: string): string {
+  return query
+    .replace(/@/g, ' ')
+    .replace(/\b(of|the|at|in)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** 生成多个搜索变体，提高海外 POI 命中率 */
+function buildSearchQueryVariants(query: string): string[] {
+  const trimmed = query.trim()
+  if (!trimmed) return []
+
+  const normalized = normalizeSearchQuery(trimmed)
+  const variants = new Set<string>([trimmed, normalized])
+
+  const withoutPrefix = trimmed.replace(/^cq\s*/i, 'Clarke Quay').trim()
+  if (withoutPrefix !== trimmed) variants.add(withoutPrefix)
+
+  const words = normalized.split(' ').filter(Boolean)
+  if (words.length >= 3) {
+    const reversed = [...words].reverse().join(' ')
+    variants.add(reversed)
+
+    const core = words.filter((word) => !/^(of|the|at|in|night|market)$/i.test(word)).join(' ')
+    if (core) variants.add(core)
+  }
+
+  return [...variants].filter(Boolean)
+}
+
+async function loadGooglePlacesLibrary(): Promise<GoogleMapsNamespace | null> {
+  const key = runtimeConfig.maps.googleMapsKey
+  if (!key) return null
+
+  if (typeof window === 'undefined') return null
+  if (window.google?.maps?.places) return window.google
+
+  if (!googlePlacesScriptPromise) {
+    googlePlacesScriptPromise = new Promise((resolve) => {
+      const callbackName = '__gmapsPlacesInit'
+      window[callbackName] = () => resolve(window.google ?? null)
+
+      const script = document.createElement('script')
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&callback=${callbackName}`
+      script.async = true
+      script.onerror = () => resolve(null)
+      document.head.appendChild(script)
+    })
+  }
+
+  return googlePlacesScriptPromise
+}
+
+async function getGooglePlacesService(): Promise<GoogleMapsPlacesService | null> {
+  const googleMaps = await loadGooglePlacesLibrary()
+  if (!googleMaps?.maps?.places) return null
+
+  if (!googlePlacesService) {
+    const host = document.createElement('div')
+    googlePlacesService = new googleMaps.maps.places.PlacesService(host)
+  }
+
+  return googlePlacesService
+}
+
+async function searchWithGooglePlaces(
+  query: string,
+  bias?: { lat: number; lng: number }
+): Promise<PlaceSearchResult[]> {
+  const service = await getGooglePlacesService()
+  if (!service) return []
+
+  const googleMaps = window.google
+  const statusOk = googleMaps?.maps?.places?.PlacesServiceStatus?.OK ?? 'OK'
+
+  const runQuery = (q: string) =>
+    new Promise<PlaceSearchResult[]>((resolve) => {
+      const request: { query: string; location?: { lat: number; lng: number }; radius?: number } = { query: q }
+      if (bias && isValidPlaceCoord(bias.lat, bias.lng)) {
+        request.location = { lat: bias.lat, lng: bias.lng }
+        request.radius = 50000
+      }
+
+      service.textSearch(request, (results, status) => {
+        if (status !== statusOk || !results?.length) {
+          resolve([])
+          return
+        }
+
+        resolve(
+          results
+            .map((item) => {
+              const lat = item.geometry?.location?.lat?.() ?? NaN
+              const lng = item.geometry?.location?.lng?.() ?? NaN
+              return {
+                name: item.name ?? q,
+                lat,
+                lng,
+                address: item.formatted_address ?? '',
+                source: 'google' as const,
+              }
+            })
+            .filter((item) => isValidPlaceCoord(item.lat, item.lng))
+        )
+      })
+    })
+
+  for (const variant of buildSearchQueryVariants(query)) {
+    const results = await runQuery(variant)
+    if (results.length) return results.slice(0, PLACE_SEARCH_LIMIT)
+  }
+
+  return []
+}
+
+async function searchWithAmap(query: string): Promise<PlaceSearchResult[]> {
+  const key = runtimeConfig.maps.amapKey
+  if (!key) return []
+
+  const results: PlaceSearchResult[] = []
+
+  for (const variant of buildSearchQueryVariants(query)) {
+    const url = `https://restapi.amap.com/v3/place/text?keywords=${encodeURIComponent(variant)}&key=${key}&offset=${PLACE_SEARCH_LIMIT}&extensions=all`
+    try {
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.status === '1' && data.pois) {
+        mergePlaceResults(
+          results,
+          data.pois.map((p: { name: string; location?: string; address?: string; pname?: string; cityname?: string; adname?: string }) => {
+            let lat = 0
+            let lng = 0
+            if (p.location) {
+              const [gcjLng, gcjLat] = p.location.split(',').map(Number)
+              ;[lng, lat] = gcj02ToWgs84(gcjLng, gcjLat)
+            }
+            return {
+              name: p.name,
+              lat,
+              lng,
+              address: p.address || `${p.pname ?? ''}${p.cityname ?? ''}${p.adname ?? ''}`,
+              source: 'amap' as const,
+            }
+          }),
+          PLACE_SEARCH_LIMIT
+        )
+      }
+    } catch {
+      // ignore
+    }
+    if (results.length) break
+  }
+
+  return results
+}
+
+async function searchWithBaidu(query: string): Promise<PlaceSearchResult[]> {
+  const key = runtimeConfig.maps.baiduMapKey
+  if (!key) return []
+
+  const results: PlaceSearchResult[] = []
+
+  for (const variant of buildSearchQueryVariants(query)) {
+    const url = `https://api.map.baidu.com/place/v2/search?query=${encodeURIComponent(variant)}&region=全国&output=json&ak=${key}`
+    try {
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.status === 0 && data.results) {
+        mergePlaceResults(
+          results,
+          data.results.map((r: { name: string; location?: { lat: number; lng: number }; address?: string }) => {
+            const lat = r.location?.lat ?? 0
+            const lng = r.location?.lng ?? 0
+            const [wgsLng, wgsLat] = bd09ToWgs84(lng, lat)
+            return {
+              name: r.name,
+              lat: wgsLat,
+              lng: wgsLng,
+              address: r.address || '',
+              source: 'baidu' as const,
+            }
+          }),
+          PLACE_SEARCH_LIMIT
+        )
+      }
+    } catch {
+      // ignore
+    }
+    if (results.length) break
+  }
+
+  return results
+}
+
+async function searchWithPhoton(
+  query: string,
+  bias?: { lat: number; lng: number }
+): Promise<PlaceSearchResult[]> {
+  const results: PlaceSearchResult[] = []
+
+  for (const variant of buildSearchQueryVariants(query)) {
+    const params = new URLSearchParams({ q: variant, limit: String(PLACE_SEARCH_LIMIT) })
+    if (bias && isValidPlaceCoord(bias.lat, bias.lng)) {
+      params.set('lat', String(bias.lat))
+      params.set('lon', String(bias.lng))
+    }
+
+    try {
+      const res = await fetch(`https://photon.komoot.io/api/?${params.toString()}`)
+      const data = await res.json()
+      const features = data.features ?? []
+
+      mergePlaceResults(
+        results,
+        features.map((feature: { properties?: Record<string, string>; geometry?: { coordinates?: [number, number] } }) => {
+          const props = feature.properties ?? {}
+          const coords = feature.geometry?.coordinates ?? [0, 0]
+          const parts = [props.housenumber, props.street, props.city, props.state, props.country].filter(Boolean)
+
+          return {
+            name: props.name || variant,
+            lat: coords[1] ?? 0,
+            lng: coords[0] ?? 0,
+            address: parts.join(', '),
+            source: 'photon' as const,
+          }
+        }),
+        PLACE_SEARCH_LIMIT * 2
+      )
+    } catch {
+      // ignore
+    }
+  }
+
+  return results.slice(0, PLACE_SEARCH_LIMIT)
+}
+
+async function searchWithNominatim(
+  query: string,
+  bias?: { lat: number; lng: number }
+): Promise<PlaceSearchResult[]> {
+  const results: PlaceSearchResult[] = []
+
+  for (const variant of buildSearchQueryVariants(query)) {
+    const params = new URLSearchParams({
+      format: 'json',
+      q: variant,
+      limit: String(PLACE_SEARCH_LIMIT),
+      addressdetails: '1',
+    })
+
+    if (bias && isValidPlaceCoord(bias.lat, bias.lng)) {
+      const pad = 0.45
+      const left = bias.lng - pad
+      const right = bias.lng + pad
+      const top = bias.lat + pad
+      const bottom = bias.lat - pad
+      params.set('viewbox', `${left},${top},${right},${bottom}`)
+      params.set('bounded', '0')
+    }
+
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+        headers: NOMINATIM_HEADERS,
+      })
+      const data = await res.json()
+
+      mergePlaceResults(
+        results,
+        (data ?? []).map((item: { display_name?: string; lat?: string; lon?: string; name?: string }) => ({
+          name: item.name || item.display_name?.split(',')[0] || variant,
+          lat: parseFloat(item.lat ?? '0'),
+          lng: parseFloat(item.lon ?? '0'),
+          address: item.display_name ?? '',
+          source: 'nominatim' as const,
+        })),
+        PLACE_SEARCH_LIMIT * 2
+      )
+    } catch {
+      // ignore
+    }
+  }
+
+  return results.slice(0, PLACE_SEARCH_LIMIT)
+}
+
+async function searchWithGlobalProviders(
+  query: string,
+  bias?: { lat: number; lng: number }
+): Promise<PlaceSearchResult[]> {
+  const results: PlaceSearchResult[] = []
+
+  const [googleResults, photonResults, nominatimResults] = await Promise.all([
+    searchWithGooglePlaces(query, bias),
+    searchWithPhoton(query, bias),
+    searchWithNominatim(query, bias),
+  ])
+
+  const merged = [...googleResults, ...photonResults, ...nominatimResults]
+  mergePlaceResults(results, rankPlaceResults(merged, query), PLACE_SEARCH_LIMIT)
+
+  if (results.length === 0) {
+    const geo = await geocode(query)
+    if (geo && isValidPlaceCoord(geo.lat, geo.lng)) {
+      results.push({
+        name: geo.name || query,
+        lat: geo.lat,
+        lng: geo.lng,
+        address: '',
+        source: 'geocode',
+      })
+    }
+  }
+
+  return results
+}
+
+/**
+ * 统一点搜索入口
+ * - 有 Key 时走对应地图商
+ * - 无结果时自动回退到全球搜索 (Google JS / Photon / Nominatim)
+ */
+export async function searchPlaces(
+  query: string,
+  options: PlaceSearchOptions = {}
+): Promise<PlaceSearchResult[]> {
+  const trimmed = query.trim()
+  if (!trimmed) return []
+
+  const provider = options.provider ?? 'auto'
+  const bias = options.bias
+  const limit = options.limit ?? PLACE_SEARCH_LIMIT
+  const keys = runtimeConfig.maps
+
+  let results: PlaceSearchResult[] = []
+
+  if (provider === 'google' || (provider === 'auto' && keys.googleMapsKey)) {
+    results = await searchWithGooglePlaces(trimmed, bias)
+  } else if (provider === 'amap' && keys.amapKey) {
+    results = await searchWithAmap(trimmed)
+  } else if (provider === 'baidu' && keys.baiduMapKey) {
+    results = await searchWithBaidu(trimmed)
+  }
+
+  if (results.length === 0) {
+    results = await searchWithGlobalProviders(trimmed, bias)
+  }
+
+  return rankPlaceResults(results, trimmed).slice(0, limit)
+}

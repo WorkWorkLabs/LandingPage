@@ -1,12 +1,12 @@
 <template>
   <div class="min-h-screen flex flex-col bg-white text-[#262626]">
-    <AppHeader />
+    <AppHeader v-if="!isMapPage" />
 
-    <main class="flex-1 pt-16">
+    <main :class="isMapPage ? 'flex-1' : 'flex-1 pt-16'">
       <router-view />
     </main>
 
-    <AppFooter />
+    <AppFooter v-if="!isMapPage" />
 
     <Transition
       enter-active-class="transition-all duration-300"
@@ -28,16 +28,20 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppFooter from '@/components/layout/AppFooter.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
+const route = useRoute()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const { loading } = storeToRefs(appStore)
+
+const isMapPage = computed(() => route.name === 'NomadMap')
 
 const updateBreakpoint = () => {
   const width = window.innerWidth
