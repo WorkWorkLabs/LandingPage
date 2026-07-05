@@ -1,3 +1,12 @@
+import { hasSupabaseConfig } from '@/config/app'
+import {
+  DEMO_CATEGORIES,
+  DEMO_PODCASTS,
+  getDemoArticleById,
+  getDemoFeaturedArticles,
+  getDemoPublishedArticles,
+  getDemoTrendingArticles,
+} from '@/constants/demoContent'
 import { supabase } from '@/lib/supabase'
 import type {
   Article,
@@ -6,75 +15,111 @@ import type {
   Subscriber,
 } from '@/types/database'
 
+const QUERY_TIMEOUT_MS = 8000
+
+async function withTimeout<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      window.setTimeout(() => resolve(fallback), QUERY_TIMEOUT_MS)
+    }),
+  ])
+}
+
 // ============================================
 // 文章查询
 // ============================================
 
 /** 获取所有已发布文章（按发布时间倒序） */
 export async function fetchPublishedArticles(limit = 20): Promise<Article[]> {
-  const { data, error } = await supabase
-    .from('articles')
-    .select('*')
-    .eq('status', 'published')
-    .order('published_at', { ascending: false })
-    .limit(limit)
+  if (!hasSupabaseConfig()) return getDemoPublishedArticles(limit)
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('articles')
+      .select('*')
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(limit)
+      .then((result) => result),
+    { data: null, error: { message: 'timeout' } as { message: string } }
+  )
 
   if (error) {
-    console.error('fetchPublishedArticles error:', error)
-    return []
+    console.warn('fetchPublishedArticles fallback:', error)
+    return getDemoPublishedArticles(limit)
   }
-  return data ?? []
+  if (!data?.length) return getDemoPublishedArticles(limit)
+  return data
 }
 
 /** 获取编辑精选文章（is_featured = true） */
 export async function fetchFeaturedArticles(): Promise<Article[]> {
-  const { data, error } = await supabase
-    .from('articles')
-    .select('*')
-    .eq('status', 'published')
-    .eq('is_featured', true)
-    .order('published_at', { ascending: false })
+  if (!hasSupabaseConfig()) return getDemoFeaturedArticles()
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('articles')
+      .select('*')
+      .eq('status', 'published')
+      .eq('is_featured', true)
+      .order('published_at', { ascending: false })
+      .then((result) => result),
+    { data: null, error: { message: 'timeout' } as { message: string } }
+  )
 
   if (error) {
-    console.error('fetchFeaturedArticles error:', error)
-    return []
+    console.warn('fetchFeaturedArticles fallback:', error)
+    return getDemoFeaturedArticles()
   }
-  return data ?? []
+  if (!data?.length) return getDemoFeaturedArticles()
+  return data
 }
 
 /** 获取热门文章（按浏览量排序） */
 export async function fetchTrendingArticles(limit = 6): Promise<Article[]> {
-  const { data, error } = await supabase
-    .from('articles')
-    .select('*')
-    .eq('status', 'published')
-    .order('views', { ascending: false })
-    .limit(limit)
+  if (!hasSupabaseConfig()) return getDemoTrendingArticles(limit)
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('articles')
+      .select('*')
+      .eq('status', 'published')
+      .order('views', { ascending: false })
+      .limit(limit)
+      .then((result) => result),
+    { data: null, error: { message: 'timeout' } as { message: string } }
+  )
 
   if (error) {
-    console.error('fetchTrendingArticles error:', error)
-    return []
+    console.warn('fetchTrendingArticles fallback:', error)
+    return getDemoTrendingArticles(limit)
   }
-  return data ?? []
+  if (!data?.length) return getDemoTrendingArticles(limit)
+  return data
 }
 
 /** 获取单篇文章详情 */
 export async function fetchArticleById(id: string): Promise<Article | null> {
-  const { data, error } = await supabase
-    .from('articles')
-    .select('*')
-    .eq('id', id)
-    .single()
+  const demoArticle = getDemoArticleById(id)
+  if (!hasSupabaseConfig()) return demoArticle
 
-  if (error) {
-    console.error('fetchArticleById error:', error)
-    return null
+  const { data, error } = await withTimeout(
+    supabase.from('articles').select('*').eq('id', id).single().then((result) => result),
+    { data: null, error: { message: 'timeout' } as { message: string } }
+  )
+
+  if (error || !data) {
+    console.warn('fetchArticleById fallback:', error)
+    return demoArticle
   }
   return data
 }
 
 /** 增加文章浏览量（直接更新 views 字段） */
 export async function incrementArticleViews(id: string): Promise<void> {
+  if (!hasSupabaseConfig() || id.startsWith('demo-')) return
+
   const { data: article } = await supabase
     .from('articles')
     .select('views')
@@ -95,19 +140,26 @@ export async function incrementArticleViews(id: string): Promise<void> {
 
 /** 获取所有已发布播客（按发布时间倒序） */
 export async function fetchPodcastEpisodes(limit = 10): Promise<PodcastEpisode[]> {
-  const { data, error } = await supabase
-    .from('podcast_episodes')
-    .select('*')
-    .not('published_at', 'is', null)
-    .lte('published_at', new Date().toISOString())
-    .order('published_at', { ascending: false })
-    .limit(limit)
+  if (!hasSupabaseConfig()) return DEMO_PODCASTS.slice(0, limit)
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('podcast_episodes')
+      .select('*')
+      .not('published_at', 'is', null)
+      .lte('published_at', new Date().toISOString())
+      .order('published_at', { ascending: false })
+      .limit(limit)
+      .then((result) => result),
+    { data: null, error: { message: 'timeout' } as { message: string } }
+  )
 
   if (error) {
-    console.error('fetchPodcastEpisodes error:', error)
-    return []
+    console.warn('fetchPodcastEpisodes fallback:', error)
+    return DEMO_PODCASTS.slice(0, limit)
   }
-  return data ?? []
+  if (!data?.length) return DEMO_PODCASTS.slice(0, limit)
+  return data
 }
 
 // ============================================
@@ -116,17 +168,24 @@ export async function fetchPodcastEpisodes(limit = 10): Promise<PodcastEpisode[]
 
 /** 获取所有活跃分类 */
 export async function fetchCategories(): Promise<Category[]> {
-  const { data, error } = await supabase
-    .from('categories')
-    .select('*')
-    .eq('is_active', true)
-    .order('sort_order', { ascending: true })
+  if (!hasSupabaseConfig()) return DEMO_CATEGORIES
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from('categories')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .then((result) => result),
+    { data: null, error: { message: 'timeout' } as { message: string } }
+  )
 
   if (error) {
-    console.error('fetchCategories error:', error)
-    return []
+    console.warn('fetchCategories fallback:', error)
+    return DEMO_CATEGORIES
   }
-  return data ?? []
+  if (!data?.length) return DEMO_CATEGORIES
+  return data
 }
 
 // ============================================
@@ -135,6 +194,10 @@ export async function fetchCategories(): Promise<Category[]> {
 
 /** 订阅邮件列表 */
 export async function subscribe(email: string): Promise<{ error: string | null }> {
+  if (!hasSupabaseConfig()) {
+    return { error: '演示模式下暂不支持订阅，请配置 Supabase 后重试' }
+  }
+
   const { error } = await supabase
     .from('subscribers')
     .insert({ email })

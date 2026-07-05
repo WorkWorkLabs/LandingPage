@@ -11,7 +11,7 @@ import {
   subscribe,
 } from '@/composables/useSupabaseQuery'
 import type { Article, PodcastEpisode, Category } from '@/types/database'
-import { optimizeImage } from '@/utils/image'
+import { FALLBACK_COVER_IMAGE, optimizeImage } from '@/utils/image'
 
 const { currentText: heroTitle } = useTypewriter(
   ['数字游民 × OPC 一人公司新范式', '赋予每个人自由工作的权利'],
@@ -54,11 +54,25 @@ async function handleSubscribe() {
 
 // --- 图片懒加载 ---
 const loadedImages = ref<string[]>([])
+const failedImages = ref<string[]>([])
+
 const markImageLoaded = (id: string) => {
   if (!loadedImages.value.includes(id)) {
     loadedImages.value = [...loadedImages.value, id]
   }
 }
+
+const handleImageError = (id: string, event: Event) => {
+  if (!failedImages.value.includes(id)) {
+    failedImages.value = [...failedImages.value, id]
+  }
+  const target = event.target as HTMLImageElement | null
+  if (target && target.src !== FALLBACK_COVER_IMAGE) {
+    target.src = FALLBACK_COVER_IMAGE
+  }
+  markImageLoaded(id)
+}
+
 const isImageLoaded = (id: string) => loadedImages.value.includes(id)
 
 // --- 格式化浏览量 ---
@@ -124,13 +138,7 @@ onMounted(() => {
   })
 
   fetchCategories().then((data) => {
-    categories.value = data.length > 0 ? data : [
-      { id: '1', slug: 'recommend', label: '推荐', icon: '★', sort_order: 1, is_active: true, created_at: '' },
-      { id: '2', slug: 'all', label: '全部内容', icon: '◉', sort_order: 2, is_active: true, created_at: '' },
-      { id: '3', slug: 'topics', label: '话题讨论', icon: '◎', sort_order: 3, is_active: true, created_at: '' },
-      { id: '4', slug: 'hot', label: '热门内容', icon: '△', sort_order: 4, is_active: true, created_at: '' },
-      { id: '5', slug: 'follow', label: '关注', icon: '♡', sort_order: 5, is_active: true, created_at: '' },
-    ]
+    categories.value = data
     categoriesLoaded.value = true
   })
 
@@ -191,6 +199,7 @@ onMounted(() => {
                     class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     :class="{ 'opacity-0': !isImageLoaded(`featured-${i}`) }"
                     @load="markImageLoaded(`featured-${i}`)"
+                    @error="handleImageError(`featured-${i}`, $event)"
                   />
                 </div>
                 <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
@@ -225,6 +234,7 @@ onMounted(() => {
                 class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
                 :class="{ 'opacity-0': !isImageLoaded('hero-main') }"
                 @load="markImageLoaded('hero-main')"
+                @error="handleImageError('hero-main', $event)"
               />
             </div>
             <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
@@ -332,6 +342,7 @@ onMounted(() => {
                 width="64"
                 height="64"
                 class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                @error="handleImageError(`podcast-${ep.id}`, $event)"
               />
             </div>
             <div class="min-w-0 flex-1">
@@ -456,6 +467,7 @@ onMounted(() => {
                       class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                       :class="{ 'opacity-0': !isImageLoaded(article.id) }"
                       @load="markImageLoaded(article.id)"
+                      @error="handleImageError(article.id, $event)"
                     />
                   </div>
                 </div>

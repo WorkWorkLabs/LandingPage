@@ -1,18 +1,20 @@
+export const FALLBACK_COVER_IMAGE =
+  'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800&h=500&fit=crop&auto=format&q=75'
+
 /**
  * 优化图片 URL，减少传输体积
  * - Unsplash: 自动添加尺寸、裁剪、质量参数
  * - 其他 URL: 原样返回
  */
 export function optimizeImage(url: string | null | undefined, width = 400, height = 300): string {
-  if (!url) return ''
+  if (!url?.trim()) return FALLBACK_COVER_IMAGE
 
-  // Unsplash 图片优化
+  // Unsplash 图片优化（覆盖已有尺寸参数，避免重复拼接）
   if (url.includes('images.unsplash.com')) {
-    const separator = url.includes('?') ? '&' : '?'
-    return `${url}${separator}w=${width}&h=${height}&fit=crop&auto=format&q=75`
+    const base = url.split('?')[0]
+    return `${base}?w=${width}&h=${height}&fit=crop&auto=format&q=75`
   }
 
-  // 非 Unsplash 的外部 URL 直接返回
   return url
 }
 
