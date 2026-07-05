@@ -9,6 +9,14 @@ const ArticleDetail = () => import('@/views/ArticleDetailView.vue')
 const ArticlePublish = () => import('@/views/ArticlePublishView.vue')
 const NomadMap = () => import('@/views/NomadMapView.vue')
 
+let nomadMapPrefetch: Promise<unknown> | null = null
+export function prefetchNomadMap() {
+  if (!nomadMapPrefetch) {
+    nomadMapPrefetch = NomadMap()
+  }
+  return nomadMapPrefetch
+}
+
 const routes: RouteRecordRaw[] = [
   {
     path: '/',

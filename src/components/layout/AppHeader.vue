@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { prefetchNomadMap } from '@/router'
 import AppLogo from './AppLogo.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -45,6 +46,12 @@ const closeDropdown = () => {
   activeDropdown.value = null
 }
 
+function handleNavHover(item: { href: string; isRoute?: boolean }) {
+  if (item.isRoute && item.href === '/map') {
+    prefetchNomadMap()
+  }
+}
+
 function navigateTo(item: { href: string; isRoute?: boolean }) {
   if (item.isRoute) {
     router.push(item.href)
@@ -68,6 +75,10 @@ const handleScroll = () => {
 onMounted(() => {
   handleScroll()
   window.addEventListener('scroll', handleScroll)
+
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(() => prefetchNomadMap(), { timeout: 4000 })
+  }
 })
 
 onUnmounted(() => {
@@ -132,6 +143,7 @@ onUnmounted(() => {
               <a
                 :href="item.href"
                 class="inline-flex items-center gap-1 rounded-full px-4 py-2 text-sm font-medium text-[#262626] transition-colors duration-200 hover:bg-[#48A9DE]/8 hover:text-[#48A9DE]"
+                @mouseenter="handleNavHover(item)"
                 @click.prevent="navigateTo(item)"
               >
                 {{ item.label }}

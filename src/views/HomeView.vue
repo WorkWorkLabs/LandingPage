@@ -3,11 +3,8 @@ import { onMounted, ref } from 'vue'
 import { useTypewriter } from '@/composables/useTypewriter'
 import { useScrollParallax } from '@/composables/useScrollParallax'
 import {
-  fetchFeaturedArticles,
-  fetchPublishedArticles,
-  fetchTrendingArticles,
-  fetchPodcastEpisodes,
-  fetchCategories,
+  fetchHomeCriticalData,
+  fetchHomeSecondaryData,
   subscribe,
 } from '@/composables/useSupabaseQuery'
 import type { Article, PodcastEpisode, Category } from '@/types/database'
@@ -121,31 +118,31 @@ onMounted(() => {
     document.head.appendChild(metaDescription)
   }
 
-  // 各区域独立加载，先到先渲染
-  fetchFeaturedArticles().then((data) => {
-    featuredArticles.value = data
+  // 首屏关键数据并行加载
+  void fetchHomeCriticalData().then(({ featured, categories: cats, articles: published }) => {
+    featuredArticles.value = featured
+    categories.value = cats
+    articles.value = published
     featuredLoaded.value = true
-  })
-
-  fetchPublishedArticles(10).then((data) => {
-    articles.value = data
+    categoriesLoaded.value = true
     articlesLoaded.value = true
   })
 
-  fetchPodcastEpisodes(3).then((data) => {
-    podcastEpisodes.value = data
-    podcastsLoaded.value = true
-  })
+  // 播客与侧边栏延迟加载，避免抢占首屏带宽
+  const loadSecondary = () => {
+    void fetchHomeSecondaryData().then(({ podcasts, trending }) => {
+      podcastEpisodes.value = podcasts
+      trendingArticles.value = trending
+      podcastsLoaded.value = true
+      trendingLoaded.value = true
+    })
+  }
 
-  fetchCategories().then((data) => {
-    categories.value = data
-    categoriesLoaded.value = true
-  })
-
-  fetchTrendingArticles(6).then((data) => {
-    trendingArticles.value = data
-    trendingLoaded.value = true
-  })
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(loadSecondary, { timeout: 1200 })
+  } else {
+    window.setTimeout(loadSecondary, 150)
+  }
 })
 </script>
 
@@ -228,12 +225,12 @@ onMounted(() => {
               <img
                 :src="optimizeImage(featuredArticles[0].cover_image, 800, 500)"
                 alt="Featured"
-                loading="lazy"
+                loading="eager"
+                fetchpriority="high"
+                decoding="async"
                 width="800"
                 height="500"
                 class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                :class="{ 'opacity-0': !isImageLoaded('hero-main') }"
-                @load="markImageLoaded('hero-main')"
                 @error="handleImageError('hero-main', $event)"
               />
             </div>

@@ -67,7 +67,16 @@ const handleResize = () => {
 
 onMounted(() => {
   updateBreakpoint()
-  void authStore.initialize()
+
+  const initAuth = () => {
+    void authStore.initialize()
+  }
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(initAuth, { timeout: 2500 })
+  } else {
+    window.setTimeout(initAuth, 50)
+  }
+
   window.addEventListener('resize', handleResize)
 })
 
