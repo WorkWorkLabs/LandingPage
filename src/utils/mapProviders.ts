@@ -91,8 +91,9 @@ export function fromMapDisplayCoords(
 const FAST_TILE_OPTIONS = {
   updateWhenZooming: false,
   updateWhenIdle: true,
-  keepBuffer: 2,
+  keepBuffer: 3,
   maxNativeZoom: 18,
+  className: 'hand-drawn-tile-layer',
 } as const
 
 export function createAmapBaseLayer(): L.TileLayer {

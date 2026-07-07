@@ -132,6 +132,7 @@ let userLocationMarker: L.CircleMarker | null = null
 let mapResizeObserver: ResizeObserver | null = null
 let mapRefreshTimer: number | null = null
 let markerRefreshFrame: number | null = null
+let lastMapLayoutSize = { width: 0, height: 0 }
 const markerIconCache = new Map<MapCategory, L.DivIcon>()
 
 function scheduleIdle(task: () => void, timeout = 2000) {
@@ -152,21 +153,50 @@ function isValidCoord(lat: number, lng: number): boolean {
   )
 }
 
-function refreshMapTiles() {
-  if (!mapInstance) return
+type SyncMapLayoutOptions = {
+  layout?: boolean
+  redraw?: boolean
+}
+
+function syncMapLayout(options: SyncMapLayoutOptions = {}) {
+  const needsLayout = options.layout ?? false
+  const needsRedraw = options.redraw ?? false
+  if (!mapInstance || (!needsLayout && !needsRedraw)) return
 
   if (mapRefreshTimer) {
     window.clearTimeout(mapRefreshTimer)
   }
 
+  const debounceMs = needsRedraw ? 64 : 160
+
   mapRefreshTimer = window.setTimeout(() => {
     mapRefreshTimer = null
     if (!mapInstance) return
-    mapInstance.invalidateSize({ animate: false, pan: false })
-    if (baseTileLayer && 'redraw' in baseTileLayer && typeof baseTileLayer.redraw === 'function') {
+
+    if (needsLayout && mapContainer.value) {
+      const rect = mapContainer.value.getBoundingClientRect()
+      const width = Math.round(rect.width)
+      const height = Math.round(rect.height)
+      if (
+        width > 0 &&
+        height > 0 &&
+        (width !== lastMapLayoutSize.width || height !== lastMapLayoutSize.height)
+      ) {
+        lastMapLayoutSize = { width, height }
+        mapInstance.invalidateSize({ animate: false, pan: false })
+      }
+    }
+
+    if (
+      needsRedraw &&
+      countLoadedTiles() === 0 &&
+      baseTileLayer &&
+      'redraw' in baseTileLayer &&
+      typeof baseTileLayer.redraw === 'function'
+    ) {
       baseTileLayer.redraw()
     }
-  }, 32)
+  }, debounceMs)
 }
 
 function focusMapOnPoint(lat: number, lng: number, zoom = 16, animate = true) {
@@ -175,17 +205,10 @@ function focusMapOnPoint(lat: number, lng: number, zoom = 16, animate = true) {
   const [dLat, dLng] = displayLatLng(lat, lng)
   const targetZoom = Math.min(zoom, mapInstance.getMaxZoom())
 
-  const onMoveComplete = () => {
-    refreshMapTiles()
-  }
-
   if (animate) {
     mapInstance.flyTo([dLat, dLng], targetZoom, { duration: 0.6 })
-    mapInstance.once('moveend', onMoveComplete)
-    window.setTimeout(onMoveComplete, 800)
   } else {
     mapInstance.setView([dLat, dLng], targetZoom)
-    void nextTick(onMoveComplete)
   }
 }
 
@@ -281,10 +304,8 @@ async function locateMe(options: { animate?: boolean } = {}) {
   const targetZoom = Math.max(mapInstance.getZoom(), runtimeConfig.maps.userZoom)
   if (options.animate) {
     mapInstance.flyTo([dLat, dLng], targetZoom, { duration: 0.8 })
-    mapInstance.once('moveend', refreshMapTiles)
   } else {
     mapInstance.setView([dLat, dLng], targetZoom)
-    refreshMapTiles()
   }
 }
 
@@ -390,8 +411,6 @@ function hoverSearchResult(result: PlaceSearchResult, idx: number) {
   const [dLat, dLng] = displayLatLng(result.lat, result.lng)
   const targetZoom = Math.min(Math.max(mapInstance.getZoom(), 14), 16)
   mapInstance.flyTo([dLat, dLng], targetZoom, { duration: 0.35 })
-  mapInstance.once('moveend', refreshMapTiles)
-  window.setTimeout(refreshMapTiles, 450)
 }
 
 function clearSearchResultHover() {
@@ -445,6 +464,7 @@ function destroyMapIfNeeded() {
   userLocationMarker = null
   addPreviewMarker = null
   searchHoverMarker = null
+  lastMapLayoutSize = { width: 0, height: 0 }
   mapReady.value = false
 }
 
@@ -483,15 +503,15 @@ function countLoadedTiles(): number {
 function applyFastBaseLayer(mode: MapRegionMode = mapRegion.value) {
   if (!mapInstance) return
 
-  baseTileMount?.destroy()
-  baseTileMount = null
-  baseTileLayer = null
-
-  baseTileMount = mountBaseLayerForRegion(mapInstance, mode, (label) => {
+  const previousMount = baseTileMount
+  const nextMount = mountBaseLayerForRegion(mapInstance, mode, (label) => {
     activeBaseMapLabel.value = label
   })
-  baseTileLayer = baseTileMount.layer
-  activeBaseMapLabel.value = baseTileMount.label
+
+  baseTileMount = nextMount
+  baseTileLayer = nextMount.layer
+  activeBaseMapLabel.value = nextMount.label
+  previousMount?.destroy()
   ensureMarkerPaneOnTop()
 }
 
@@ -509,7 +529,7 @@ async function recoverBlankTiles() {
     if (googleLayer) {
       baseTileMount = null
       baseTileLayer = googleLayer
-      refreshMapTiles()
+      syncMapLayout({ redraw: true })
       return
     }
   }
@@ -518,7 +538,7 @@ async function recoverBlankTiles() {
     setMapRegion('china', false)
     applyFastBaseLayer('china')
     refreshMarkers()
-    refreshMapTiles()
+    syncMapLayout({ redraw: true })
   }
 }
 
@@ -539,14 +559,12 @@ async function autoLocateOnIdle() {
   setUserLocationMarker(userPos)
   const [flyLat, flyLng] = displayLatLng(userPos.lat, userPos.lng)
   mapInstance.setView([flyLat, flyLng], runtimeConfig.maps.userZoom, { animate: false })
-  refreshMapTiles()
 }
 
 async function switchMapRegion(mode: MapRegionMode) {
   if (mode === mapRegion.value || switchingRegion.value) return
 
   switchingRegion.value = true
-  mapInitializing.value = true
   closeRegionMenu()
 
   setMapRegion(mode)
@@ -558,15 +576,13 @@ async function switchMapRegion(mode: MapRegionMode) {
 
     const center = getDefaultCenterForRegion(mode)
     const [dLat, dLng] = displayLatLng(center.lat, center.lng)
-    mapInstance?.flyTo([dLat, dLng], getInitialZoom(), { duration: 0.7 })
+    mapInstance?.setView([dLat, dLng], getInitialZoom(), { animate: false })
 
     refreshMarkers()
     if (userLocation.value) setUserLocationMarker(userLocation.value)
     if (showAddSpot.value) updateAddPreviewMarker()
-    void nextTick(refreshMapTiles)
   } finally {
     switchingRegion.value = false
-    mapInitializing.value = false
   }
 }
 
@@ -586,7 +602,7 @@ async function initMap() {
     mapInitError.value = ''
     mapReady.value = true
     mapInitializing.value = false
-    void nextTick(refreshMapTiles)
+    void nextTick(() => syncMapLayout({ layout: true }))
     return
   }
 
@@ -627,7 +643,7 @@ async function initMap() {
     ensureMarkerPaneOnTop()
 
     requestAnimationFrame(() => {
-      refreshMapTiles()
+      syncMapLayout({ layout: true })
       refreshMarkers()
     })
 
@@ -851,9 +867,6 @@ watch(filteredLocations, () => {
 // 监听添加面板与选点模式，动态绑定/解绑地图点击事件
 watch([showAddSpot, addLocationMode], () => {
   syncMapPickMode()
-  if (showAddSpot.value) {
-    window.setTimeout(refreshMapTiles, 100)
-  }
 })
 
 // 坐标变化时更新预览标记
@@ -954,9 +967,6 @@ async function searchPOI() {
     }
   } finally {
     isSearching.value = false
-    void nextTick(() => {
-      window.setTimeout(refreshMapTiles, 50)
-    })
   }
 }
 
@@ -1026,8 +1036,6 @@ function openAddSpotPanel() {
   showAddSpot.value = true
   updateAddPreviewMarker()
   syncMapPickMode()
-
-  window.setTimeout(refreshMapTiles, 50)
 }
 
 function closeAddSpotPanel() {
@@ -1037,7 +1045,6 @@ function closeAddSpotPanel() {
   clearSearchResultHover()
   removeAddPreviewMarker()
   syncMapPickMode()
-  void nextTick(refreshMapTiles)
 }
 
 function resetAddSpotForm() {
@@ -1139,7 +1146,7 @@ onMounted(() => {
 
   if (mapContainer.value) {
     mapResizeObserver = new ResizeObserver(() => {
-      refreshMapTiles()
+      syncMapLayout({ layout: true })
     })
     mapResizeObserver.observe(mapContainer.value)
   }
@@ -1561,6 +1568,21 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   z-index: 0;
+  contain: layout paint;
+}
+
+.map-canvas :deep(.leaflet-container) {
+  background: #F8F5F0;
+}
+
+.map-canvas :deep(.leaflet-tile),
+.map-canvas :deep(.leaflet-zoom-anim .leaflet-zoom-animated),
+.map-canvas :deep(.leaflet-fade-anim .leaflet-tile) {
+  transition: none !important;
+}
+
+.map-canvas :deep(.leaflet-fade-anim .leaflet-tile-loaded) {
+  opacity: 1 !important;
 }
 
 .map-init-overlay {
@@ -1603,7 +1625,6 @@ onUnmounted(() => {
       rgba(139, 119, 101, 0.015) 3px,
       rgba(139, 119, 101, 0.015) 4px
     );
-  mix-blend-mode: multiply;
 }
 
 /* ============================================
