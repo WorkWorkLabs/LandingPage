@@ -58,7 +58,8 @@ const showAddSpot = ref(false)
 const mapReady = ref(false)
 const mapInitializing = ref(true)
 const mapLoading = ref(false)
-const mapError = ref('')
+const mapInitError = ref('')
+const mapDataError = ref('')
 const locating = ref(false)
 const locationError = ref('')
 const userLocation = ref<{ lat: number; lng: number } | null>(null)
@@ -431,6 +432,29 @@ function syncMapPickMode() {
 // ============================================
 // Leaflet 地图初始化
 // ============================================
+type LeafletContainer = HTMLElement & { _leaflet_id?: number }
+
+function destroyMapIfNeeded() {
+  if (mapInstance) {
+    mapInstance.off('click', handleMapClickForAdd)
+    mapInstance.remove()
+    mapInstance = null
+  }
+  baseTileLayer = null
+  markerGroup = null
+  userLocationMarker = null
+  addPreviewMarker = null
+  mapReady.value = false
+}
+
+function prepareMapContainer(container: HTMLElement) {
+  const leafletContainer = container as LeafletContainer
+  if (leafletContainer._leaflet_id !== undefined) {
+    container.replaceChildren()
+    delete leafletContainer._leaflet_id
+  }
+}
+
 function ensureMarkerPaneOnTop() {
   if (!mapInstance) return
 
@@ -518,16 +542,25 @@ async function initMap() {
   await nextTick()
   if (!mapContainer.value) {
     mapInitializing.value = false
-    mapError.value = '地图容器未就绪，请刷新页面重试'
+    mapInitError.value = '地图容器未就绪，请刷新页面重试'
     return
   }
 
+  if (mapInstance) {
+    mapInitError.value = ''
+    mapReady.value = true
+    return
+  }
+
+  mapInitError.value = ''
   mapInitializing.value = true
   const initSafetyTimer = window.setTimeout(() => {
     mapInitializing.value = false
   }, 10000)
 
   try {
+    prepareMapContainer(mapContainer.value)
+
     const center = getDefaultCenterForRegion(mapRegion.value)
     const [dLat, dLng] = displayLatLng(center.lat, center.lng)
     const zoom = getInitialZoom()
@@ -577,7 +610,10 @@ async function initMap() {
     })
   } catch (error) {
     console.error('initMap failed:', error)
-    mapError.value = '地图初始化失败，请刷新页面重试'
+    if (!mapReady.value) {
+      destroyMapIfNeeded()
+      mapInitError.value = '地图初始化失败，请刷新页面重试'
+    }
   } finally {
     window.clearTimeout(initSafetyTimer)
     mapInitializing.value = false
@@ -667,13 +703,13 @@ function mapSpotToLocation(spot: NomadSpot): MapLocation {
 
 async function loadNomadLocations() {
   mapLoading.value = true
-  mapError.value = ''
+  mapDataError.value = ''
 
   const { data, error } = await fetchActiveNomadSpots()
   mapLoading.value = false
 
   if (error) {
-    mapError.value = `地图数据加载失败：${error}`
+    mapDataError.value = `地图数据加载失败：${error}`
     return
   }
 
@@ -1049,13 +1085,7 @@ onUnmounted(() => {
   }
   mapResizeObserver?.disconnect()
   mapResizeObserver = null
-  baseTileLayer = null
-
-  if (mapInstance) {
-    mapInstance.off('click', handleMapClickForAdd)
-    mapInstance.remove()
-    mapInstance = null
-  }
+  destroyMapIfNeeded()
 })
 </script>
 
@@ -1228,8 +1258,11 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <div v-if="(locationError || mapError) && !showDetail && !showAddSpot" class="map-location-error">
-      {{ locationError || mapError }}
+    <div
+      v-if="(locationError || mapInitError || mapDataError) && !showDetail && !showAddSpot"
+      class="map-location-error"
+    >
+      {{ locationError || mapInitError || mapDataError }}
     </div>
 
     <div v-if="mapLoading && !showDetail && !showAddSpot" class="map-data-status">
