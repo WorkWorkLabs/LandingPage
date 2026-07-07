@@ -6,12 +6,21 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
   MAP_CATEGORIES,
-  DEFAULT_CENTER,
   DEFAULT_ZOOM,
   type MapLocation,
   type MapCategory,
 } from '@/constants/map'
+import { useMapRegion } from '@/composables/useMapRegion'
 import { runtimeConfig } from '@/config/app'
+import {
+  createBaseLayerForRegion,
+  fromMapDisplayCoords,
+  getDefaultCenterForRegion,
+  getInitialZoom,
+  getSearchProviderForRegion,
+  toMapDisplayCoords,
+  type MapRegionMode,
+} from '@/utils/mapProviders'
 import { createNomadSpot, fetchActiveNomadSpots, updateNomadSpotRegion } from '@/services/nomadSpots'
 import type { NomadSpot } from '@/types/database'
 import {
@@ -25,6 +34,16 @@ import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const {
+  mapRegion,
+  regionMenuOpen,
+  regionLabel,
+  providerLabel,
+  setMapRegion,
+  toggleRegionMenu,
+  closeRegionMenu,
+  applyRegionFromCoords,
+} = useMapRegion()
 
 // ============================================
 // 状态
@@ -47,43 +66,46 @@ const addSpotError = ref('')
 const addSpotName = ref('')
 const addSpotDescription = ref('')
 const addSpotCategory = ref<MapCategory>('work')
-const addSpotLat = ref(DEFAULT_CENTER.lat)
-const addSpotLng = ref(DEFAULT_CENTER.lng)
+const addSpotLat = ref(getDefaultCenterForRegion(mapRegion.value).lat)
+const addSpotLng = ref(getDefaultCenterForRegion(mapRegion.value).lng)
 
 // 用于外部地图搜索
 const searchName = ref('')
 
-// 搜索提供商和结果
-const searchProvider = ref<'google' | 'amap' | 'baidu'>(
-  runtimeConfig.maps.googleMapsKey ? 'google' : runtimeConfig.maps.amapKey ? 'amap' : 'google'
-)
+// 搜索提供商和结果（随国内/国外模式自动切换）
+const searchProvider = computed(() => getSearchProviderForRegion(mapRegion.value))
 const searchResults = ref<PlaceSearchResult[]>([])
 const searchEmpty = ref(false)
 const isSearching = ref(false)
 const detailRegionLoading = ref(false)
 const showLoginReminder = ref(false)
+const switchingRegion = ref(false)
 
 const hasGoogleMapsKey = computed(() => Boolean(runtimeConfig.maps.googleMapsKey))
+const hasAmapKey = computed(() => Boolean(runtimeConfig.maps.amapKey))
 
 const searchEmptyMessage = computed(() => {
-  if (searchProvider.value === 'google' && hasGoogleMapsKey.value) {
-    return '未找到相关地点。可尝试更简短的关键词、补充城市或地区名，也可以直接粘贴 Google 地图分享链接。'
+  if (mapRegion.value === 'china') {
+    return hasAmapKey.value
+      ? '未找到相关地点。可尝试更简短的关键词、补充城市名，或粘贴高德/百度地图分享链接。'
+      : '未找到相关地点。请配置高德 Key，或粘贴地图分享链接。'
   }
 
-  if (hasGoogleMapsKey.value) {
-    return '未找到相关地点。海外地点请切换为 Google Maps 搜索，或粘贴 Google 地图分享链接。'
-  }
-
-  return '未找到相关地点。海外地点建议配置 Google Maps Key 后使用 Google 搜索，或粘贴 Google 地图分享链接。'
+  return hasGoogleMapsKey.value
+    ? '未找到相关地点。可尝试更简短的关键词、补充城市或地区名，也可以直接粘贴 Google 地图分享链接。'
+    : '未找到相关地点。请配置 Google Maps Key，或粘贴 Google 地图分享链接。'
 })
 
 const searchHintMessage = computed(() => {
-  if (hasGoogleMapsKey.value) {
-    return '已启用 Google 搜索。也可直接粘贴地图链接，点击结果即可填入坐标和名称。'
+  if (mapRegion.value === 'china') {
+    return '当前使用高德地图搜索中国大陆地点，也可直接粘贴地图链接。'
   }
-
-  return '海外地点建议选 Google Maps 并配置 Key；也可直接粘贴地图链接。'
+  return '当前使用 Google Maps 搜索海外地点，也可直接粘贴 Google 地图分享链接。'
 })
+
+function displayLatLng(lat: number, lng: number): [number, number] {
+  return toMapDisplayCoords(lat, lng, mapRegion.value)
+}
 
 const regionResolveCache = new Map<string, { city: string; country: string }>()
 let loginReminderTimer: number | null = null
@@ -92,7 +114,7 @@ let loginReminderTimer: number | null = null
 const addLocationMode = ref<'search' | 'click'>('search')
 let addPreviewMarker: L.Marker | null = null
 let mapInstance: L.Map | null = null
-let baseTileLayer: L.TileLayer | null = null
+let baseTileLayer: L.Layer | null = null
 let markerGroup: L.LayerGroup | null = null
 let userLocationMarker: L.CircleMarker | null = null
 let mapResizeObserver: ResizeObserver | null = null
@@ -120,13 +142,16 @@ function refreshMapTiles() {
     mapRefreshTimer = null
     if (!mapInstance) return
     mapInstance.invalidateSize({ animate: false, pan: false })
-    baseTileLayer?.redraw()
+    if (baseTileLayer && 'redraw' in baseTileLayer && typeof baseTileLayer.redraw === 'function') {
+      baseTileLayer.redraw()
+    }
   }, 32)
 }
 
 function focusMapOnPoint(lat: number, lng: number, zoom = 16, animate = true) {
   if (!mapInstance || !isValidCoord(lat, lng)) return
 
+  const [dLat, dLng] = displayLatLng(lat, lng)
   const targetZoom = Math.min(zoom, mapInstance.getMaxZoom())
 
   const onMoveComplete = () => {
@@ -134,11 +159,11 @@ function focusMapOnPoint(lat: number, lng: number, zoom = 16, animate = true) {
   }
 
   if (animate) {
-    mapInstance.flyTo([lat, lng], targetZoom, { duration: 0.6 })
+    mapInstance.flyTo([dLat, dLng], targetZoom, { duration: 0.6 })
     mapInstance.once('moveend', onMoveComplete)
     window.setTimeout(onMoveComplete, 800)
   } else {
-    mapInstance.setView([lat, lng], targetZoom)
+    mapInstance.setView([dLat, dLng], targetZoom)
     void nextTick(onMoveComplete)
   }
 }
@@ -282,8 +307,10 @@ function getUserLocation(): Promise<{ lat: number; lng: number } | null> {
 function setUserLocationMarker(pos: { lat: number; lng: number }) {
   if (!mapInstance) return
 
+  const [dLat, dLng] = displayLatLng(pos.lat, pos.lng)
+
   if (!userLocationMarker) {
-    userLocationMarker = L.circleMarker([pos.lat, pos.lng], {
+    userLocationMarker = L.circleMarker([dLat, dLng], {
       radius: 9,
       color: '#ffffff',
       weight: 3,
@@ -298,7 +325,7 @@ function setUserLocationMarker(pos: { lat: number; lng: number }) {
       })
       .addTo(mapInstance)
   } else {
-    userLocationMarker.setLatLng([pos.lat, pos.lng])
+    userLocationMarker.setLatLng([dLat, dLng])
   }
 }
 
@@ -317,14 +344,16 @@ async function locateMe(options: { animate?: boolean } = {}) {
   }
 
   userLocation.value = pos
+  applyRegionFromCoords(pos.lat, pos.lng)
   setUserLocationMarker(pos)
 
+  const [dLat, dLng] = displayLatLng(pos.lat, pos.lng)
   const targetZoom = Math.max(mapInstance.getZoom(), runtimeConfig.maps.userZoom)
   if (options.animate) {
-    mapInstance.flyTo([pos.lat, pos.lng], targetZoom, { duration: 0.8 })
+    mapInstance.flyTo([dLat, dLng], targetZoom, { duration: 0.8 })
     mapInstance.once('moveend', refreshMapTiles)
   } else {
-    mapInstance.setView([pos.lat, pos.lng], targetZoom)
+    mapInstance.setView([dLat, dLng], targetZoom)
     refreshMapTiles()
   }
 }
@@ -333,8 +362,9 @@ async function locateMe(options: { animate?: boolean } = {}) {
 function handleMapClickForAdd(e: L.LeafletMouseEvent) {
   if (!showAddSpot.value || addLocationMode.value !== 'click') return
 
-  addSpotLat.value = Number(e.latlng.lat.toFixed(6))
-  addSpotLng.value = Number(e.latlng.lng.toFixed(6))
+  const wgs = fromMapDisplayCoords(e.latlng.lat, e.latlng.lng, mapRegion.value)
+  addSpotLat.value = Number(wgs.lat.toFixed(6))
+  addSpotLng.value = Number(wgs.lng.toFixed(6))
   addSpotError.value = ''
   updateAddPreviewMarker()
 }
@@ -342,13 +372,12 @@ function handleMapClickForAdd(e: L.LeafletMouseEvent) {
 function updateAddPreviewMarker() {
   if (!mapInstance) return
 
-  const lat = addSpotLat.value
-  const lng = addSpotLng.value
+  const [dLat, dLng] = displayLatLng(addSpotLat.value, addSpotLng.value)
 
   if (addPreviewMarker) {
-    addPreviewMarker.setLatLng([lat, lng])
+    addPreviewMarker.setLatLng([dLat, dLng])
   } else {
-    addPreviewMarker = L.marker([lat, lng], {
+    addPreviewMarker = L.marker([dLat, dLng], {
       icon: L.divIcon({
         className: 'add-preview-marker',
         html: `
@@ -400,35 +429,64 @@ function syncMapPickMode() {
 // ============================================
 // Leaflet 地图初始化
 // ============================================
+async function swapBaseLayer(mode: MapRegionMode) {
+  if (!mapInstance) return
+
+  if (baseTileLayer) {
+    mapInstance.removeLayer(baseTileLayer)
+    baseTileLayer = null
+  }
+
+  const layer = await createBaseLayerForRegion(mode)
+  baseTileLayer = layer
+  layer.addTo(mapInstance)
+}
+
+async function switchMapRegion(mode: MapRegionMode) {
+  if (mode === mapRegion.value || switchingRegion.value) return
+
+  switchingRegion.value = true
+  mapInitializing.value = true
+  closeRegionMenu()
+
+  setMapRegion(mode)
+  searchResults.value = []
+  searchEmpty.value = false
+
+  try {
+    await swapBaseLayer(mode)
+
+    const center = getDefaultCenterForRegion(mode)
+    const [dLat, dLng] = displayLatLng(center.lat, center.lng)
+    mapInstance?.flyTo([dLat, dLng], getInitialZoom(), { duration: 0.7 })
+
+    refreshMarkers()
+    if (userLocation.value) setUserLocationMarker(userLocation.value)
+    if (showAddSpot.value) updateAddPreviewMarker()
+    void nextTick(refreshMapTiles)
+  } finally {
+    switchingRegion.value = false
+    mapInitializing.value = false
+  }
+}
+
 async function initMap() {
   if (!mapContainer.value) return
 
   mapInitializing.value = true
-  const center = { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng }
-  const zoom = runtimeConfig.maps.defaultZoom || DEFAULT_ZOOM
-
-  // CARTO Positron 浅色底图 — 无需 API Key，全球覆盖
-  baseTileLayer = L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 19,
-      subdomains: 'abcd',
-      updateWhenZooming: false,
-      keepBuffer: 4,
-    }
-  )
+  const center = getDefaultCenterForRegion(mapRegion.value)
+  const [dLat, dLng] = displayLatLng(center.lat, center.lng)
+  const zoom = getInitialZoom()
 
   mapInstance = L.map(mapContainer.value, {
-    center: [center.lat, center.lng],
+    center: [dLat, dLng],
     zoom,
     zoomControl: false,
     attributionControl: true,
     fadeAnimation: false,
   })
 
-  baseTileLayer.addTo(mapInstance)
+  await swapBaseLayer(mapRegion.value)
 
   // 缩放控件放右下角
   L.control.zoom({ position: 'bottomright' }).addTo(mapInstance)
@@ -447,8 +505,13 @@ async function initMap() {
   void getUserLocation().then((userPos) => {
     if (!userPos || !mapInstance) return
     userLocation.value = userPos
-    setUserLocationMarker(userPos)
-    mapInstance.flyTo([userPos.lat, userPos.lng], runtimeConfig.maps.userZoom, { duration: 0.8 })
+    applyRegionFromCoords(userPos.lat, userPos.lng)
+    void swapBaseLayer(mapRegion.value).then(() => {
+      if (!mapInstance) return
+      setUserLocationMarker(userPos)
+      const [flyLat, flyLng] = displayLatLng(userPos.lat, userPos.lng)
+      mapInstance.flyTo([flyLat, flyLng], runtimeConfig.maps.userZoom, { duration: 0.8 })
+    })
   })
 }
 
@@ -490,7 +553,7 @@ function applyLocationRegion(loc: MapLocation, city: string, country: string) {
 
 async function resolveLocationRegion(
   loc: MapLocation,
-  provider: typeof searchProvider.value = searchProvider.value
+  provider: 'google' | 'amap' | 'baidu' = searchProvider.value
 ): Promise<{ city: string; country: string } | null> {
   const cached = regionResolveCache.get(loc.id)
   if (cached) return cached
@@ -587,7 +650,8 @@ function refreshMarkersNow() {
 
   filteredLocations.value.forEach((loc) => {
     const icon = createMarkerIcon(loc)
-    const marker = L.marker([loc.lat, loc.lng], { icon })
+    const [dLat, dLng] = displayLatLng(loc.lat, loc.lng)
+    const marker = L.marker([dLat, dLng], { icon })
     marker.on('click', () => openDetail(loc))
     markerGroup!.addLayer(marker)
   })
@@ -690,7 +754,7 @@ async function searchPOI() {
     }
 
     const results = await searchPlaces(query, {
-      provider: searchProvider.value,
+      provider: searchProvider.value as 'google' | 'amap',
       bias,
     })
 
@@ -729,7 +793,8 @@ function selectSearchResult(result: PlaceSearchResult) {
   if (Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
     updateAddPreviewMarker();
     if (mapInstance) {
-      mapInstance.flyTo([result.lat, result.lng], 16, { duration: 0.6 })
+      const [dLat, dLng] = displayLatLng(result.lat, result.lng)
+      mapInstance.flyTo([dLat, dLng], 16, { duration: 0.6 })
       mapInstance.once('moveend', refreshMapTiles)
       window.setTimeout(refreshMapTiles, 800)
     }
@@ -776,8 +841,9 @@ function openAddSpotPanel() {
   dismissLoginReminder()
 
   const center = mapInstance?.getCenter()
-  addSpotLat.value = center?.lat ?? userLocation.value?.lat ?? DEFAULT_CENTER.lat
-  addSpotLng.value = center?.lng ?? userLocation.value?.lng ?? DEFAULT_CENTER.lng
+  const fallback = getDefaultCenterForRegion(mapRegion.value)
+  addSpotLat.value = center?.lat ?? userLocation.value?.lat ?? fallback.lat
+  addSpotLng.value = center?.lng ?? userLocation.value?.lng ?? fallback.lng
   addSpotError.value = ''
   searchName.value = ''
   addLocationMode.value = 'search'
@@ -871,10 +937,19 @@ function closeDetail() {
 // ============================================
 // 生命周期
 // ============================================
+function handleDocumentClick(event: MouseEvent) {
+  if (!regionMenuOpen.value) return
+  const target = event.target as HTMLElement | null
+  if (!target?.closest('.map-region-controls')) {
+    closeRegionMenu()
+  }
+}
+
 onMounted(() => {
   void authStore.initialize()
   void initMap()
   void loadNomadLocations()
+  document.addEventListener('click', handleDocumentClick)
 
   if (mapContainer.value) {
     mapResizeObserver = new ResizeObserver(() => {
@@ -885,6 +960,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.removeEventListener('click', handleDocumentClick)
   dismissLoginReminder()
   if (markerRefreshFrame !== null) {
     cancelAnimationFrame(markerRefreshFrame)
@@ -939,6 +1015,50 @@ onUnmounted(() => {
           </svg>
         </button>
       </template>
+    </div>
+
+    <!-- 右上角：国内/国外地图切换 -->
+    <div v-if="!showDetail" class="map-region-controls">
+      <button
+        type="button"
+        class="map-settings-btn"
+        :class="{ active: regionMenuOpen }"
+        :title="`地图设置：${regionLabel} · ${providerLabel}`"
+        aria-label="地图区域设置"
+        @click="toggleRegionMenu"
+      >
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        <span class="map-settings-label">{{ regionLabel }}</span>
+      </button>
+
+      <Transition name="region-menu">
+        <div v-if="regionMenuOpen" class="map-region-menu" role="menu">
+          <p class="map-region-menu-title">地图服务</p>
+          <button
+            type="button"
+            class="map-region-option"
+            :class="{ active: mapRegion === 'china' }"
+            role="menuitem"
+            @click="switchMapRegion('china')"
+          >
+            <span class="map-region-option-name">国内</span>
+            <span class="map-region-option-desc">高德地图 · 中国大陆</span>
+          </button>
+          <button
+            type="button"
+            class="map-region-option"
+            :class="{ active: mapRegion === 'global' }"
+            role="menuitem"
+            @click="switchMapRegion('global')"
+          >
+            <span class="map-region-option-name">国外</span>
+            <span class="map-region-option-desc">Google Maps · 海外地区</span>
+          </button>
+        </div>
+      </Transition>
     </div>
 
     <!-- 分类筛选：详情面板打开时隐藏 -->
@@ -1158,11 +1278,10 @@ onUnmounted(() => {
               <input v-model="searchName" type="text" placeholder="例如：加德满都 咖啡馆" @keyup.enter="searchPOI" />
             </label>
             <div class="search-toolbar">
-              <select v-model="searchProvider" class="search-provider-select">
-                <option value="amap">高德地图</option>
-                <option value="google">Google Maps</option>
-                <option value="baidu">百度地图</option>
-              </select>
+              <div class="search-provider-badge">
+                <span class="search-provider-badge-label">当前搜索</span>
+                <span class="search-provider-badge-value">{{ providerLabel }}</span>
+              </div>
               <button type="button" class="search-submit-btn" @click="searchPOI" :disabled="isSearching">
                 <LoadingSpinner v-if="isSearching" size="sm" inline label="搜索中" />
                 <span>{{ isSearching ? '搜索中' : '搜索' }}</span>
@@ -1226,7 +1345,7 @@ onUnmounted(() => {
 
     <!-- 底部归属信息 -->
     <div v-if="mapReady" class="map-engine-badge">
-      🍃 Leaflet + CARTO · Supabase
+      {{ providerLabel }} · Leaflet · Supabase
     </div>
   </div>
 </template>
@@ -1313,6 +1432,123 @@ onUnmounted(() => {
   transform: none;
   width: auto;
   max-width: calc(100vw - 32px);
+}
+
+/* ============================================
+   右上角地图区域切换
+   ============================================ */
+.map-region-controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1250;
+}
+
+.map-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 14px 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: white;
+  color: #262626;
+  cursor: pointer;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s;
+}
+
+.map-settings-btn:hover,
+.map-settings-btn.active {
+  color: #48A9DE;
+  box-shadow: 0 4px 20px rgba(72, 169, 222, 0.18);
+}
+
+.map-settings-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.map-settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.map-region-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 220px;
+  padding: 10px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 12px 32px rgba(26, 26, 26, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.map-region-menu-title {
+  margin: 0 0 8px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8C8C8C;
+}
+
+.map-region-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.map-region-option + .map-region-option {
+  margin-top: 4px;
+}
+
+.map-region-option:hover {
+  background: #F7F9FB;
+  border-color: rgba(72, 169, 222, 0.15);
+}
+
+.map-region-option.active {
+  background: #E8F4FD;
+  border-color: rgba(72, 169, 222, 0.35);
+}
+
+.map-region-option-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1A1A1A;
+}
+
+.map-region-option-desc {
+  font-size: 11px;
+  color: #8C8C8C;
+}
+
+.region-menu-enter-active,
+.region-menu-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.region-menu-enter-from,
+.region-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 .map-back-btn {
@@ -2178,13 +2414,29 @@ onUnmounted(() => {
   margin-bottom: 8px;
 }
 
-.search-provider-select {
+.search-provider-badge {
   flex: 1;
-  padding: 8px 10px;
-  border: 1px solid #E5E5E5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
   border-radius: 8px;
+  background: #F7F9FB;
+  border: 1px solid #E9ECEF;
+}
+
+.search-provider-badge-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8C8C8C;
+}
+
+.search-provider-badge-value {
   font-size: 13px;
-  background: white;
+  font-weight: 600;
+  color: #1A5276;
 }
 
 .search-submit-btn {

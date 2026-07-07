@@ -53,6 +53,18 @@ interface GoogleMapsNamespace {
 }
 
 interface Window {
-  google?: GoogleMapsNamespace
+  google?: GoogleMapsNamespace & {
+    maps?: GoogleMapsNamespace['maps'] & {
+      Map?: unknown
+    }
+  }
   __gmapsPlacesInit?: () => void
+  __workworkGmapsReady?: () => void
+}
+
+declare module 'leaflet.gridlayer.googlemutant/src/Leaflet.GoogleMutant.mjs' {
+  import { GridLayer } from 'leaflet'
+  export default class GoogleMutant extends GridLayer {
+    constructor(options?: { type?: string; styles?: unknown[]; maxZoom?: number })
+  }
 }

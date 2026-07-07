@@ -26,7 +26,7 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return
           if (id.includes('@supabase')) return 'supabase'
-          if (id.includes('leaflet')) return 'leaflet'
+          if (id.includes('googlemutant') || id.includes('leaflet')) return 'leaflet'
           if (id.includes('vue') || id.includes('pinia') || id.includes('vue-router')) return 'vendor'
         },
       },
