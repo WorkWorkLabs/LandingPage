@@ -475,7 +475,11 @@ function ensureMarkerPaneOnTop() {
     if (el) el.style.zIndex = String(zIndexes[index])
   })
 
-  markerGroup?.bringToFront()
+  markerGroup?.eachLayer((layer) => {
+    if (typeof layer.bringToFront === 'function') {
+      layer.bringToFront()
+    }
+  })
 }
 
 async function swapBaseLayer(mode: MapRegionMode, options: { preferFast?: boolean } = {}) {
