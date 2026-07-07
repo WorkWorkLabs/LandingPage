@@ -121,7 +121,9 @@ let loginReminderTimer: number | null = null
 
 // 添加地点方式：地图搜索 | 地图选点
 const addLocationMode = ref<'search' | 'click'>('search')
+const hoveredSearchIndex = ref<number | null>(null)
 let addPreviewMarker: L.Marker | null = null
+let searchHoverMarker: L.Marker | null = null
 let mapInstance: L.Map | null = null
 let baseTileLayer: L.Layer | null = null
 let baseTileMount: MountedTileLayer | null = null
@@ -336,6 +338,67 @@ function removeAddPreviewMarker() {
   }
 }
 
+function updateSearchHoverMarker(result: PlaceSearchResult) {
+  if (!mapInstance || !isValidCoord(result.lat, result.lng)) return
+
+  const [dLat, dLng] = displayLatLng(result.lat, result.lng)
+
+  if (searchHoverMarker) {
+    searchHoverMarker.setLatLng([dLat, dLng])
+    return
+  }
+
+  searchHoverMarker = L.marker([dLat, dLng], {
+    icon: L.divIcon({
+      className: 'search-hover-marker',
+      html: `
+        <div style="
+          width: 32px; height: 32px;
+          border-radius: 50%;
+          border: 3px solid #F4A261;
+          background: rgba(244, 162, 97, 0.25);
+          display: flex; align-items: center; justify-content: center;
+          font-size: 18px;
+          box-shadow: 0 2px 10px rgba(244, 162, 97, 0.45);
+        ">
+          📍
+        </div>
+      `,
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+    }),
+    interactive: false,
+    zIndexOffset: 900,
+  }).addTo(mapInstance)
+}
+
+function removeSearchHoverMarker() {
+  if (searchHoverMarker && mapInstance) {
+    mapInstance.removeLayer(searchHoverMarker)
+    searchHoverMarker = null
+  }
+}
+
+function hoverSearchResult(result: PlaceSearchResult, idx: number) {
+  if (!isValidCoord(result.lat, result.lng)) return
+
+  hoveredSearchIndex.value = idx
+  updateSearchHoverMarker(result)
+
+  if (!mapInstance) return
+
+  const [dLat, dLng] = displayLatLng(result.lat, result.lng)
+  const targetZoom = Math.min(Math.max(mapInstance.getZoom(), 14), 16)
+  mapInstance.flyTo([dLat, dLng], targetZoom, { duration: 0.35 })
+  mapInstance.once('moveend', refreshMapTiles)
+  window.setTimeout(refreshMapTiles, 450)
+}
+
+function clearSearchResultHover() {
+  hoveredSearchIndex.value = null
+  removeSearchHoverMarker()
+}
+
 function setAddMode(mode: 'search' | 'click') {
   addLocationMode.value = mode
   addSpotError.value = mode === 'click' ? '请在地图上点击选取位置' : ''
@@ -381,6 +444,7 @@ function destroyMapIfNeeded() {
   markerGroup = null
   userLocationMarker = null
   addPreviewMarker = null
+  searchHoverMarker = null
   mapReady.value = false
 }
 
@@ -839,6 +903,7 @@ async function searchPOI() {
   isSearching.value = true
   searchResults.value = []
   searchEmpty.value = false
+  clearSearchResultHover()
 
   try {
     const center = mapInstance?.getCenter()
@@ -896,20 +961,16 @@ async function searchPOI() {
 }
 
 function selectSearchResult(result: PlaceSearchResult) {
-  addSpotLat.value = result.lat;
-  addSpotLng.value = result.lng;
+  clearSearchResultHover()
+  addSpotLat.value = result.lat
+  addSpotLng.value = result.lng
   addSpotError.value = ''
   if (!addSpotName.value.trim()) {
-    addSpotName.value = result.name;
+    addSpotName.value = result.name
   }
-  if (Number.isFinite(result.lat) && Number.isFinite(result.lng)) {
-    updateAddPreviewMarker();
-    if (mapInstance) {
-      const [dLat, dLng] = displayLatLng(result.lat, result.lng)
-      mapInstance.flyTo([dLat, dLng], 16, { duration: 0.6 })
-      mapInstance.once('moveend', refreshMapTiles)
-      window.setTimeout(refreshMapTiles, 800)
-    }
+  if (isValidCoord(result.lat, result.lng)) {
+    updateAddPreviewMarker()
+    focusMapOnPoint(result.lat, result.lng, 16)
   }
 }
 
@@ -960,6 +1021,7 @@ function openAddSpotPanel() {
   searchName.value = ''
   addLocationMode.value = 'search'
   searchResults.value = []
+  clearSearchResultHover()
   removeAddPreviewMarker()
   showAddSpot.value = true
   updateAddPreviewMarker()
@@ -972,6 +1034,7 @@ function closeAddSpotPanel() {
   showAddSpot.value = false
   addSpotError.value = ''
   addLocationMode.value = 'search'
+  clearSearchResultHover()
   removeAddPreviewMarker()
   syncMapPickMode()
   void nextTick(refreshMapTiles)
@@ -1412,8 +1475,19 @@ onUnmounted(() => {
               <LoadingSpinner size="md" text="正在搜索地点..." />
             </div>
 
-            <div v-if="searchResults.length" class="search-results">
-              <div v-for="(r, idx) in searchResults" :key="idx" class="result-item" @click="selectSearchResult(r)">
+            <div
+              v-if="searchResults.length"
+              class="search-results"
+              @mouseleave="clearSearchResultHover"
+            >
+              <div
+                v-for="(r, idx) in searchResults"
+                :key="idx"
+                class="result-item"
+                :class="{ active: hoveredSearchIndex === idx }"
+                @mouseenter="hoverSearchResult(r, idx)"
+                @click="selectSearchResult(r)"
+              >
                 <div class="result-name">{{ r.name }}</div>
                 <div class="result-address">{{ r.address }}</div>
               </div>
@@ -2628,8 +2702,13 @@ onUnmounted(() => {
   border-bottom: none;
 }
 
-.result-item:hover {
-  background: #f8f9fa;
+.result-item:hover,
+.result-item.active {
+  background: #eef7fc;
+}
+
+.result-item.active {
+  box-shadow: inset 3px 0 0 #48A9DE;
 }
 
 .result-name {
