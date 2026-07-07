@@ -12,7 +12,6 @@ import {
 } from '@/constants/map'
 import { DEMO_MAP_LOCATIONS } from '@/constants/demoLocations'
 import { useMapRegion } from '@/composables/useMapRegion'
-import { useMapTheme } from '@/composables/useMapTheme'
 import { runtimeConfig } from '@/config/app'
 import {
   fromMapDisplayCoords,
@@ -26,7 +25,6 @@ import {
   type MapRegionMode,
 } from '@/utils/mapProviders'
 import type { MountedTileLayer } from '@/utils/tileFallback'
-import type { MapThemeId } from '@/utils/mapStyles'
 import {
   createNomadSpot,
   fetchActiveNomadSpots,
@@ -58,13 +56,6 @@ const {
   closeRegionMenu,
   applyRegionFromCoords,
 } = useMapRegion()
-const {
-  mapTheme,
-  themeLabel,
-  themeMeta,
-  mapThemes,
-  setMapTheme,
-} = useMapTheme()
 
 // ============================================
 // 状态
@@ -425,14 +416,14 @@ function countLoadedTiles(): number {
   return mapContainer.value?.querySelectorAll('.leaflet-tile-loaded').length ?? 0
 }
 
-function applyFastBaseLayer(mode: MapRegionMode = mapRegion.value, theme: MapThemeId = mapTheme.value) {
+function applyFastBaseLayer(mode: MapRegionMode = mapRegion.value) {
   if (!mapInstance) return
 
   baseTileMount?.destroy()
   baseTileMount = null
   baseTileLayer = null
 
-  baseTileMount = mountBaseLayerForRegion(mapInstance, mode, theme, (label) => {
+  baseTileMount = mountBaseLayerForRegion(mapInstance, mode, (label) => {
     activeBaseMapLabel.value = label
   })
   baseTileLayer = baseTileMount.layer
@@ -440,14 +431,13 @@ function applyFastBaseLayer(mode: MapRegionMode = mapRegion.value, theme: MapThe
   ensureMarkerPaneOnTop()
 }
 
-async function recoverBlankTiles(theme: MapThemeId = mapTheme.value) {
+async function recoverBlankTiles() {
   if (!mapInstance || countLoadedTiles() > 0) return
 
   if (mapRegion.value === 'global' && runtimeConfig.maps.googleMapsKey) {
     const googleLayer = await promoteGoogleTileFallback(
       mapInstance,
       baseTileMount,
-      theme,
       (label) => {
         activeBaseMapLabel.value = label
       }
@@ -462,18 +452,10 @@ async function recoverBlankTiles(theme: MapThemeId = mapTheme.value) {
 
   if (mapRegion.value === 'global') {
     setMapRegion('china', false)
-    applyFastBaseLayer('china', theme)
+    applyFastBaseLayer('china')
     refreshMarkers()
     refreshMapTiles()
   }
-}
-
-function switchMapTheme(theme: MapThemeId) {
-  if (theme === mapTheme.value || !mapInstance) return
-
-  setMapTheme(theme)
-  applyFastBaseLayer(mapRegion.value, theme)
-  void nextTick(refreshMapTiles)
 }
 
 async function autoLocateOnIdle() {
@@ -1118,11 +1100,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    class="map-page"
-    :class="[`map-theme-${mapTheme}`, { 'map-theme-dark': mapTheme === 'night' }]"
-    :style="{ background: themeMeta.pageBackground }"
-  >
+  <div class="map-page">
     <!-- 顶部栏：详情页显示返回，否则显示搜索 -->
     <div class="map-topbar" :class="{ 'map-topbar--detail': showDetail }">
       <button
@@ -1162,38 +1140,19 @@ onUnmounted(() => {
         type="button"
         class="map-settings-btn"
         :class="{ active: regionMenuOpen }"
-        :title="`地图设置：${regionLabel} · ${themeLabel}`"
-        aria-label="地图设置"
+        :title="`地图服务：${regionLabel}`"
+        aria-label="地图服务"
         @click="toggleRegionMenu"
       >
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
-        <span class="map-settings-label">{{ themeLabel }}</span>
+        <span class="map-settings-label">{{ regionLabel }}</span>
       </button>
 
       <Transition name="region-menu">
         <div v-if="regionMenuOpen" class="map-region-menu" role="menu">
-          <p class="map-region-menu-title">地图风格</p>
-          <button
-            v-for="theme in mapThemes"
-            :key="theme.id"
-            type="button"
-            class="map-region-option map-theme-option"
-            :class="{ active: mapTheme === theme.id }"
-            role="menuitem"
-            @click="switchMapTheme(theme.id)"
-          >
-            <span class="map-theme-swatch" :style="{ background: theme.preview }" />
-            <span class="map-theme-option-text">
-              <span class="map-region-option-name">{{ theme.emoji }} {{ theme.label }}</span>
-              <span class="map-region-option-desc">{{ theme.description }}</span>
-            </span>
-          </button>
-
-          <div class="map-region-menu-divider" />
-
           <p class="map-region-menu-title">地图服务</p>
           <button
             type="button"
@@ -1244,7 +1203,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 手绘纸张纹理覆盖 -->
-    <div v-if="themeMeta.showPaperOverlay" class="map-paper-overlay" />
+    <div class="map-paper-overlay" />
 
 
 
@@ -1506,7 +1465,7 @@ onUnmounted(() => {
 
     <!-- 底部归属信息 -->
     <div v-if="mapReady" class="map-engine-badge">
-      {{ themeLabel }} · {{ activeBaseMapLabel || baseMapLabel }} · {{ searchProviderLabel }} · Leaflet
+      手绘旅册 · {{ activeBaseMapLabel || baseMapLabel }} · {{ searchProviderLabel }} · Leaflet
     </div>
   </div>
 </template>
@@ -1554,83 +1513,6 @@ onUnmounted(() => {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-}
-
-/* ============================================
-   地图风格 · 瓦片滤镜（国内高德栅格近似调色）
-   ============================================ */
-.map-theme-sky :deep(.leaflet-tile-pane img) {
-  filter: saturate(1.05) hue-rotate(-8deg) brightness(1.03);
-}
-
-.map-theme-sketch :deep(.leaflet-tile-pane img) {
-  filter: saturate(0.35) brightness(1.06) contrast(0.92);
-}
-
-.map-theme-coastal :deep(.leaflet-tile-pane img) {
-  filter: sepia(0.14) saturate(1.12) brightness(1.02);
-}
-
-.map-theme-mint :deep(.leaflet-tile-pane img) {
-  filter: saturate(0.92) hue-rotate(12deg) brightness(1.02);
-}
-
-.map-theme-night :deep(.leaflet-tile-pane img) {
-  filter: brightness(0.72) saturate(0.75) contrast(1.05);
-}
-
-/* ============================================
-   夜景模式 · 浮层 UI 适配
-   ============================================ */
-.map-theme-dark .map-settings-btn,
-.map-theme-dark .map-search-input,
-.map-theme-dark .map-menu-btn,
-.map-theme-dark .map-cat-chip,
-.map-theme-dark .map-locate-btn,
-.map-theme-dark .map-add-btn,
-.map-theme-dark .map-announce-btn,
-.map-theme-dark .map-data-status,
-.map-theme-dark .map-engine-badge {
-  background: rgba(30, 36, 48, 0.94);
-  color: #E8EEF2;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.06);
-}
-
-.map-theme-dark .map-settings-btn:hover,
-.map-theme-dark .map-settings-btn.active {
-  color: #84C6E9;
-}
-
-.map-theme-dark .map-cat-chip.active {
-  background: rgba(72, 169, 222, 0.22);
-  color: #84C6E9;
-}
-
-.map-theme-dark .map-region-menu {
-  background: rgba(30, 36, 48, 0.98);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-
-.map-theme-dark .map-region-option-name {
-  color: #F0F4F8;
-}
-
-.map-theme-dark .map-region-option-desc,
-.map-theme-dark .map-region-menu-title {
-  color: #8C9BAA;
-}
-
-.map-theme-dark .map-region-option:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.map-theme-dark .map-region-option.active {
-  background: rgba(72, 169, 222, 0.18);
-  border-color: rgba(72, 169, 222, 0.35);
-}
-
-.map-theme-dark .map-init-overlay {
-  background: rgba(30, 36, 48, 0.82);
 }
 
 /* 手绘纸张覆盖层 */
@@ -1728,34 +1610,6 @@ onUnmounted(() => {
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 12px 32px rgba(26, 26, 26, 0.12);
   backdrop-filter: blur(8px);
-}
-
-.map-region-menu-divider {
-  height: 1px;
-  margin: 10px 4px;
-  background: rgba(0, 0, 0, 0.06);
-}
-
-.map-theme-option {
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-}
-
-.map-theme-swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
-}
-
-.map-theme-option-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
 }
 
 .map-region-menu-title {

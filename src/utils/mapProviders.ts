@@ -7,7 +7,6 @@ import {
   getAmapTileStyleParam,
   getCartoVariant,
   getGoogleMapStyle,
-  type MapThemeId,
 } from '@/utils/mapStyles'
 import { mountTileLayerWithFallback, type MountedTileLayer } from '@/utils/tileFallback'
 
@@ -96,8 +95,8 @@ const FAST_TILE_OPTIONS = {
   maxNativeZoom: 18,
 } as const
 
-export function createAmapBaseLayer(theme: MapThemeId = 'journal'): L.TileLayer {
-  const style = getAmapTileStyleParam(theme)
+export function createAmapBaseLayer(): L.TileLayer {
+  const style = getAmapTileStyleParam()
   return L.tileLayer(
     `https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=${style}&x={x}&y={y}&z={z}`,
     {
@@ -118,8 +117,8 @@ export function createOsmBaseLayer(): L.TileLayer {
   })
 }
 
-export function createCartoLayerForTheme(theme: MapThemeId = 'journal'): L.TileLayer {
-  const variant = getCartoVariant(theme)
+export function createCartoBaseLayer(): L.TileLayer {
+  const variant = getCartoVariant()
   return L.tileLayer(`https://{s}.basemaps.cartocdn.com/${variant}/{z}/{x}/{y}{r}.png`, {
     attribution:
       '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
@@ -129,12 +128,17 @@ export function createCartoLayerForTheme(theme: MapThemeId = 'journal'): L.TileL
   })
 }
 
-/** @deprecated 使用 createCartoLayerForTheme */
+/** @deprecated 使用 createCartoBaseLayer */
 export function createCartoFallbackLayer(): L.TileLayer {
-  return createCartoLayerForTheme('journal')
+  return createCartoBaseLayer()
 }
 
-export async function createGoogleMutantLayer(theme: MapThemeId = 'journal'): Promise<L.Layer | null> {
+/** @deprecated 使用 createCartoBaseLayer */
+export function createCartoLayerForTheme(): L.TileLayer {
+  return createCartoBaseLayer()
+}
+
+export async function createGoogleMutantLayer(): Promise<L.Layer | null> {
   if (!runtimeConfig.maps.googleMapsKey) return null
 
   const ready = await loadGoogleMapsJs()
@@ -146,7 +150,7 @@ export async function createGoogleMutantLayer(theme: MapThemeId = 'journal'): Pr
     )
     return new GoogleMutant({
       type: 'roadmap',
-      styles: getGoogleMapStyle(theme),
+      styles: getGoogleMapStyle(),
       maxZoom: 19,
     }) as unknown as L.Layer
   } catch (error) {
@@ -156,25 +160,21 @@ export async function createGoogleMutantLayer(theme: MapThemeId = 'journal'): Pr
 }
 
 /** 同步快速底图（无回退链） */
-export function createFastBaseLayerForRegion(
-  mode: MapRegionMode,
-  theme: MapThemeId = 'journal'
-): L.Layer {
-  return mode === 'china' ? createAmapBaseLayer(theme) : createCartoLayerForTheme(theme)
+export function createFastBaseLayerForRegion(mode: MapRegionMode): L.Layer {
+  return mode === 'china' ? createAmapBaseLayer() : createCartoBaseLayer()
 }
 
 /** 带自动回退的底图：国外 CARTO → OSM；国内 高德 → OSM */
 export function mountBaseLayerForRegion(
   map: L.Map,
   mode: MapRegionMode,
-  theme: MapThemeId = 'journal',
   onSwitch?: (label: string) => void
 ): MountedTileLayer {
   if (mode === 'china') {
     return mountTileLayerWithFallback(
       map,
       [
-        { id: 'amap', label: '高德地图', create: () => createAmapBaseLayer(theme) },
+        { id: 'amap', label: '高德地图', create: () => createAmapBaseLayer() },
         { id: 'osm', label: 'OpenStreetMap', create: () => createOsmBaseLayer() },
       ],
       onSwitch
@@ -184,7 +184,7 @@ export function mountBaseLayerForRegion(
   return mountTileLayerWithFallback(
     map,
     [
-      { id: 'carto', label: 'CARTO', create: () => createCartoLayerForTheme(theme) },
+      { id: 'carto', label: 'CARTO', create: () => createCartoBaseLayer() },
       { id: 'osm', label: 'OpenStreetMap', create: () => createOsmBaseLayer() },
     ],
     onSwitch
@@ -195,10 +195,9 @@ export function mountBaseLayerForRegion(
 export async function promoteGoogleTileFallback(
   map: L.Map,
   mounted: MountedTileLayer | null,
-  theme: MapThemeId,
   onSwitch?: (label: string) => void
 ): Promise<L.Layer | null> {
-  const googleLayer = await createGoogleMutantLayer(theme)
+  const googleLayer = await createGoogleMutantLayer()
   if (!googleLayer || !map) return null
 
   mounted?.destroy()
@@ -209,10 +208,10 @@ export async function promoteGoogleTileFallback(
 
 export async function createBaseLayerForRegion(
   mode: MapRegionMode,
-  options: { preferFast?: boolean; theme?: MapThemeId } = {}
+  options: { preferFast?: boolean } = {}
 ): Promise<L.Layer> {
-  const theme = options.theme ?? 'journal'
-  return createFastBaseLayerForRegion(mode, theme)
+  void options
+  return createFastBaseLayerForRegion(mode)
 }
 
 export function getInitialZoom(): number {
