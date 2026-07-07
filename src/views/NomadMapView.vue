@@ -14,6 +14,7 @@ import { useMapRegion } from '@/composables/useMapRegion'
 import { runtimeConfig } from '@/config/app'
 import {
   createBaseLayerForRegion,
+  createFastBaseLayerForRegion,
   fromMapDisplayCoords,
   getDefaultCenterForRegion,
   getInitialZoom,
@@ -80,6 +81,7 @@ const isSearching = ref(false)
 const detailRegionLoading = ref(false)
 const showLoginReminder = ref(false)
 const switchingRegion = ref(false)
+const usingGoogleBaseMap = ref(false)
 
 const hasGoogleMapsKey = computed(() => Boolean(runtimeConfig.maps.googleMapsKey))
 const hasAmapKey = computed(() => Boolean(runtimeConfig.maps.amapKey))
@@ -443,7 +445,7 @@ function ensureMarkerPaneOnTop() {
   markerGroup?.bringToFront()
 }
 
-async function swapBaseLayer(mode: MapRegionMode) {
+async function swapBaseLayer(mode: MapRegionMode, options: { preferFast?: boolean } = {}) {
   if (!mapInstance) return
 
   if (baseTileLayer) {
@@ -451,10 +453,33 @@ async function swapBaseLayer(mode: MapRegionMode) {
     baseTileLayer = null
   }
 
-  const layer = await createBaseLayerForRegion(mode)
-  baseTileLayer = layer
-  layer.addTo(mapInstance)
-  ensureMarkerPaneOnTop()
+  try {
+    const layer = options.preferFast
+      ? createFastBaseLayerForRegion(mode)
+      : await createBaseLayerForRegion(mode)
+    baseTileLayer = layer
+    layer.addTo(mapInstance)
+    usingGoogleBaseMap.value = mode === 'global' && layer.constructor.name === 'GoogleMutant'
+    ensureMarkerPaneOnTop()
+  } catch (error) {
+    console.warn('swapBaseLayer failed, using fast fallback:', error)
+    const fallback = createFastBaseLayerForRegion(mode)
+    baseTileLayer = fallback
+    fallback.addTo(mapInstance)
+    usingGoogleBaseMap.value = false
+    ensureMarkerPaneOnTop()
+  }
+}
+
+async function upgradeToGoogleBaseMap() {
+  if (!mapInstance || mapRegion.value !== 'global' || usingGoogleBaseMap.value) return
+
+  try {
+    await swapBaseLayer('global')
+    void nextTick(refreshMapTiles)
+  } catch {
+    // 保持 CARTO 底图即可
+  }
 }
 
 async function switchMapRegion(mode: MapRegionMode) {
@@ -469,7 +494,7 @@ async function switchMapRegion(mode: MapRegionMode) {
   searchEmpty.value = false
 
   try {
-    await swapBaseLayer(mode)
+    await swapBaseLayer(mode, { preferFast: true })
 
     const center = getDefaultCenterForRegion(mode)
     const [dLat, dLng] = displayLatLng(center.lat, center.lng)
@@ -479,6 +504,10 @@ async function switchMapRegion(mode: MapRegionMode) {
     if (userLocation.value) setUserLocationMarker(userLocation.value)
     if (showAddSpot.value) updateAddPreviewMarker()
     void nextTick(refreshMapTiles)
+
+    if (mode === 'global') {
+      void upgradeToGoogleBaseMap()
+    }
   } finally {
     switchingRegion.value = false
     mapInitializing.value = false
@@ -486,49 +515,73 @@ async function switchMapRegion(mode: MapRegionMode) {
 }
 
 async function initMap() {
-  if (!mapContainer.value) return
+  await nextTick()
+  if (!mapContainer.value) {
+    mapInitializing.value = false
+    mapError.value = '地图容器未就绪，请刷新页面重试'
+    return
+  }
 
   mapInitializing.value = true
-  const center = getDefaultCenterForRegion(mapRegion.value)
-  const [dLat, dLng] = displayLatLng(center.lat, center.lng)
-  const zoom = getInitialZoom()
+  const initSafetyTimer = window.setTimeout(() => {
+    mapInitializing.value = false
+  }, 10000)
 
-  mapInstance = L.map(mapContainer.value, {
-    center: [dLat, dLng],
-    zoom,
-    zoomControl: false,
-    attributionControl: true,
-    fadeAnimation: false,
-  })
+  try {
+    const center = getDefaultCenterForRegion(mapRegion.value)
+    const [dLat, dLng] = displayLatLng(center.lat, center.lng)
+    const zoom = getInitialZoom()
 
-  await swapBaseLayer(mapRegion.value)
+    mapInstance = L.map(mapContainer.value, {
+      center: [dLat, dLng],
+      zoom,
+      zoomControl: false,
+      attributionControl: true,
+      fadeAnimation: false,
+    })
 
-  // 缩放控件放右下角
-  L.control.zoom({ position: 'bottomright' }).addTo(mapInstance)
+    // 先用同步底图立即显示，避免 Google API 阻塞首屏
+    await swapBaseLayer(mapRegion.value, { preferFast: true })
 
-  // 标记图层组
-  markerGroup = L.layerGroup().addTo(mapInstance)
+    L.control.zoom({ position: 'bottomright' }).addTo(mapInstance)
 
-  // 添加标记点
-  refreshMarkers()
-  ensureMarkerPaneOnTop()
-  mapReady.value = true
-  mapInitializing.value = false
+    markerGroup = L.layerGroup().addTo(mapInstance)
+    refreshMarkers()
+    ensureMarkerPaneOnTop()
+    mapReady.value = true
 
-  void nextTick(refreshMapTiles)
+    void nextTick(refreshMapTiles)
 
-  // 后台获取用户位置，不阻塞地图首屏
-  void getUserLocation().then((userPos) => {
-    if (!userPos || !mapInstance) return
-    userLocation.value = userPos
-    applyRegionFromCoords(userPos.lat, userPos.lng)
-    void swapBaseLayer(mapRegion.value).then(() => {
-      if (!mapInstance) return
+    // 国外模式后台升级为 Google 底图
+    if (mapRegion.value === 'global') {
+      void upgradeToGoogleBaseMap()
+    }
+
+    void getUserLocation().then(async (userPos) => {
+      if (!userPos || !mapInstance) return
+
+      const prevRegion = mapRegion.value
+      userLocation.value = userPos
+      applyRegionFromCoords(userPos.lat, userPos.lng)
+
+      if (mapRegion.value !== prevRegion) {
+        await swapBaseLayer(mapRegion.value, { preferFast: true })
+        if (mapRegion.value === 'global') {
+          void upgradeToGoogleBaseMap()
+        }
+      }
+
       setUserLocationMarker(userPos)
       const [flyLat, flyLng] = displayLatLng(userPos.lat, userPos.lng)
       mapInstance.flyTo([flyLat, flyLng], runtimeConfig.maps.userZoom, { duration: 0.8 })
     })
-  })
+  } catch (error) {
+    console.error('initMap failed:', error)
+    mapError.value = '地图初始化失败，请刷新页面重试'
+  } finally {
+    window.clearTimeout(initSafetyTimer)
+    mapInitializing.value = false
+  }
 }
 
 function getSpotCategory(tags: string[]): MapCategory {
@@ -1369,7 +1422,7 @@ onUnmounted(() => {
 
     <!-- 底部归属信息 -->
     <div v-if="mapReady" class="map-engine-badge">
-      {{ providerLabel }} · Leaflet · Supabase
+      {{ providerLabel }}{{ mapRegion === 'global' && !usingGoogleBaseMap ? ' (加载中)' : '' }} · Leaflet · Supabase
     </div>
   </div>
 </template>

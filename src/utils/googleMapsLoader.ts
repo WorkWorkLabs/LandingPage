@@ -1,5 +1,7 @@
 import { runtimeConfig } from '@/config/app'
 
+const LOAD_TIMEOUT_MS = 8000
+
 let mapsScriptPromise: Promise<boolean> | null = null
 
 export function loadGoogleMapsJs(): Promise<boolean> {
@@ -11,27 +13,27 @@ export function loadGoogleMapsJs(): Promise<boolean> {
 
   if (!mapsScriptPromise) {
     mapsScriptPromise = new Promise((resolve) => {
+      let settled = false
+      const finish = (ok: boolean) => {
+        if (settled) return
+        settled = true
+        if (!ok) mapsScriptPromise = null
+        resolve(ok)
+      }
+
       const callbackName = '__workworkGmapsReady'
       ;(window as Window & { [key: string]: () => void })[callbackName] = () => {
-        resolve(Boolean(window.google?.maps?.Map))
+        finish(Boolean(window.google?.maps?.Map))
       }
 
       const script = document.createElement('script')
       script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=${callbackName}`
       script.async = true
       script.defer = true
-      script.onerror = () => {
-        mapsScriptPromise = null
-        resolve(false)
-      }
+      script.onerror = () => finish(false)
       document.head.appendChild(script)
 
-      window.setTimeout(() => {
-        if (!window.google?.maps?.Map) {
-          mapsScriptPromise = null
-          resolve(false)
-        }
-      }, 12000)
+      window.setTimeout(() => finish(Boolean(window.google?.maps?.Map)), LOAD_TIMEOUT_MS)
     })
   }
 

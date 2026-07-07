@@ -10,6 +10,8 @@ export type MapSearchProvider = 'amap' | 'google'
 
 export const MAP_REGION_STORAGE_KEY = 'workwork-map-region'
 
+const LAYER_LOAD_TIMEOUT_MS = 6000
+
 export const CHINA_DEFAULT_CENTER = { lat: 31.2304, lng: 121.4737 }
 export const GLOBAL_DEFAULT_CENTER = DEFAULT_CENTER
 
@@ -79,7 +81,7 @@ export function createAmapBaseLayer(): L.TileLayer {
   )
 }
 
-function createCartoFallbackLayer(): L.TileLayer {
+export function createCartoFallbackLayer(): L.TileLayer {
   return L.tileLayer(
     'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     {
@@ -93,29 +95,61 @@ function createCartoFallbackLayer(): L.TileLayer {
   )
 }
 
-export async function createBaseLayerForRegion(mode: MapRegionMode): Promise<L.Layer> {
+/** 同步快速底图 — 用于首屏，绝不阻塞 */
+export function createFastBaseLayerForRegion(mode: MapRegionMode): L.Layer {
+  return mode === 'china' ? createAmapBaseLayer() : createCartoFallbackLayer()
+}
+
+async function withTimeout<T>(promise: Promise<T>, fallback: T, ms = LAYER_LOAD_TIMEOUT_MS): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => {
+      window.setTimeout(() => resolve(fallback), ms)
+    }),
+  ])
+}
+
+async function createGoogleMutantLayer(): Promise<L.Layer | null> {
+  if (!runtimeConfig.maps.googleMapsKey) return null
+
+  const ready = await loadGoogleMapsJs()
+  if (!ready) return null
+
+  try {
+    const { default: GoogleMutant } = await import(
+      'leaflet.gridlayer.googlemutant/src/Leaflet.GoogleMutant.mjs'
+    )
+    return new GoogleMutant({
+      type: 'roadmap',
+      styles: GOOGLE_MAPS_HAND_DRAWN_STYLE,
+      maxZoom: 19,
+    }) as unknown as L.Layer
+  } catch (error) {
+    console.warn('Google Mutant layer failed:', error)
+    return null
+  }
+}
+
+/** 国外模式尝试加载 Google 底图，超时或失败则回退 CARTO */
+export async function createGoogleBaseLayerWithFallback(): Promise<L.Layer> {
+  const fallback = createCartoFallbackLayer()
+  const googleLayer = await withTimeout(createGoogleMutantLayer(), null)
+  return googleLayer ?? fallback
+}
+
+export async function createBaseLayerForRegion(
+  mode: MapRegionMode,
+  options: { preferFast?: boolean } = {}
+): Promise<L.Layer> {
   if (mode === 'china') {
-    if (runtimeConfig.maps.amapKey) {
-      return createAmapBaseLayer()
-    }
     return createAmapBaseLayer()
   }
 
-  if (runtimeConfig.maps.googleMapsKey) {
-    const ready = await loadGoogleMapsJs()
-    if (ready) {
-      const { default: GoogleMutant } = await import(
-        'leaflet.gridlayer.googlemutant/src/Leaflet.GoogleMutant.mjs'
-      )
-      return new GoogleMutant({
-        type: 'roadmap',
-        styles: GOOGLE_MAPS_HAND_DRAWN_STYLE,
-        maxZoom: 19,
-      }) as unknown as L.Layer
-    }
+  if (options.preferFast) {
+    return createCartoFallbackLayer()
   }
 
-  return createCartoFallbackLayer()
+  return createGoogleBaseLayerWithFallback()
 }
 
 export function getInitialZoom(): number {
