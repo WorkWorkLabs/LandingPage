@@ -2,11 +2,14 @@ import L from 'leaflet'
 import { runtimeConfig } from '@/config/app'
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from '@/constants/map'
 import { gcj02ToWgs84, wgs84ToGcj02 } from '@/utils/locationParser'
+import { loadGoogleMapsJs } from '@/utils/googleMapsLoader'
 import {
   getAmapTileStyleParam,
   getCartoVariant,
+  getGoogleMapStyle,
   type MapThemeId,
 } from '@/utils/mapStyles'
+import { mountTileLayerWithFallback, type MountedTileLayer } from '@/utils/tileFallback'
 
 export type MapRegionMode = 'china' | 'global'
 export type MapSearchProvider = 'amap' | 'google'
@@ -106,6 +109,15 @@ export function createAmapBaseLayer(theme: MapThemeId = 'journal'): L.TileLayer 
   )
 }
 
+export function createOsmBaseLayer(): L.TileLayer {
+  return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    subdomains: ['a', 'b', 'c'],
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    ...FAST_TILE_OPTIONS,
+  })
+}
+
 export function createCartoLayerForTheme(theme: MapThemeId = 'journal'): L.TileLayer {
   const variant = getCartoVariant(theme)
   return L.tileLayer(`https://{s}.basemaps.cartocdn.com/${variant}/{z}/{x}/{y}{r}.png`, {
@@ -122,12 +134,77 @@ export function createCartoFallbackLayer(): L.TileLayer {
   return createCartoLayerForTheme('journal')
 }
 
-/** 同步快速底图 — 用于首屏，绝不阻塞 */
+export async function createGoogleMutantLayer(theme: MapThemeId = 'journal'): Promise<L.Layer | null> {
+  if (!runtimeConfig.maps.googleMapsKey) return null
+
+  const ready = await loadGoogleMapsJs()
+  if (!ready) return null
+
+  try {
+    const { default: GoogleMutant } = await import(
+      'leaflet.gridlayer.googlemutant/src/Leaflet.GoogleMutant.mjs'
+    )
+    return new GoogleMutant({
+      type: 'roadmap',
+      styles: getGoogleMapStyle(theme),
+      maxZoom: 19,
+    }) as unknown as L.Layer
+  } catch (error) {
+    console.warn('Google Mutant layer failed:', error)
+    return null
+  }
+}
+
+/** 同步快速底图（无回退链） */
 export function createFastBaseLayerForRegion(
   mode: MapRegionMode,
   theme: MapThemeId = 'journal'
 ): L.Layer {
   return mode === 'china' ? createAmapBaseLayer(theme) : createCartoLayerForTheme(theme)
+}
+
+/** 带自动回退的底图：国外 CARTO → OSM；国内 高德 → OSM */
+export function mountBaseLayerForRegion(
+  map: L.Map,
+  mode: MapRegionMode,
+  theme: MapThemeId = 'journal',
+  onSwitch?: (label: string) => void
+): MountedTileLayer {
+  if (mode === 'china') {
+    return mountTileLayerWithFallback(
+      map,
+      [
+        { id: 'amap', label: '高德地图', create: () => createAmapBaseLayer(theme) },
+        { id: 'osm', label: 'OpenStreetMap', create: () => createOsmBaseLayer() },
+      ],
+      onSwitch
+    )
+  }
+
+  return mountTileLayerWithFallback(
+    map,
+    [
+      { id: 'carto', label: 'CARTO', create: () => createCartoLayerForTheme(theme) },
+      { id: 'osm', label: 'OpenStreetMap', create: () => createOsmBaseLayer() },
+    ],
+    onSwitch
+  )
+}
+
+/** 瓦片仍未显示时，尝试 Google 底图（仅作最后兜底，搜索仍独立走 Google API） */
+export async function promoteGoogleTileFallback(
+  map: L.Map,
+  mounted: MountedTileLayer | null,
+  theme: MapThemeId,
+  onSwitch?: (label: string) => void
+): Promise<L.Layer | null> {
+  const googleLayer = await createGoogleMutantLayer(theme)
+  if (!googleLayer || !map) return null
+
+  mounted?.destroy()
+  googleLayer.addTo(map)
+  onSwitch?.('Google 底图')
+  return googleLayer
 }
 
 export async function createBaseLayerForRegion(

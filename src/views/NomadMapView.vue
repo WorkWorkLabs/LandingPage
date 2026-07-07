@@ -15,15 +15,17 @@ import { useMapRegion } from '@/composables/useMapRegion'
 import { useMapTheme } from '@/composables/useMapTheme'
 import { runtimeConfig } from '@/config/app'
 import {
-  createFastBaseLayerForRegion,
   fromMapDisplayCoords,
   getDefaultCenterForRegion,
   getInitialZoom,
   getMapSearchProvider,
   getSearchProviderLabel,
+  mountBaseLayerForRegion,
+  promoteGoogleTileFallback,
   toMapDisplayCoords,
   type MapRegionMode,
 } from '@/utils/mapProviders'
+import type { MountedTileLayer } from '@/utils/tileFallback'
 import type { MapThemeId } from '@/utils/mapStyles'
 import {
   createNomadSpot,
@@ -33,6 +35,7 @@ import {
   updateNomadSpotRegion,
 } from '@/services/nomadSpots'
 import { warmMapTileConnections } from '@/utils/mapPrefetch'
+import { loadGoogleMapsJs } from '@/utils/googleMapsLoader'
 import type { NomadSpot } from '@/types/database'
 import {
   geocode,
@@ -100,6 +103,7 @@ const isSearching = ref(false)
 const detailRegionLoading = ref(false)
 const showLoginReminder = ref(false)
 const switchingRegion = ref(false)
+const activeBaseMapLabel = ref('')
 
 const hasGoogleMapsKey = computed(() => Boolean(runtimeConfig.maps.googleMapsKey))
 
@@ -129,6 +133,7 @@ const addLocationMode = ref<'search' | 'click'>('search')
 let addPreviewMarker: L.Marker | null = null
 let mapInstance: L.Map | null = null
 let baseTileLayer: L.Layer | null = null
+let baseTileMount: MountedTileLayer | null = null
 let markerGroup: L.LayerGroup | null = null
 let userLocationMarker: L.CircleMarker | null = null
 let mapResizeObserver: ResizeObserver | null = null
@@ -378,7 +383,10 @@ function destroyMapIfNeeded() {
     mapInstance.remove()
     mapInstance = null
   }
+  baseTileMount?.destroy()
+  baseTileMount = null
   baseTileLayer = null
+  activeBaseMapLabel.value = ''
   markerGroup = null
   userLocationMarker = null
   addPreviewMarker = null
@@ -413,18 +421,51 @@ function ensureMarkerPaneOnTop(raiseMarkers = false) {
   }
 }
 
+function countLoadedTiles(): number {
+  return mapContainer.value?.querySelectorAll('.leaflet-tile-loaded').length ?? 0
+}
+
 function applyFastBaseLayer(mode: MapRegionMode = mapRegion.value, theme: MapThemeId = mapTheme.value) {
   if (!mapInstance) return
 
-  if (baseTileLayer) {
-    mapInstance.removeLayer(baseTileLayer)
-    baseTileLayer = null
+  baseTileMount?.destroy()
+  baseTileMount = null
+  baseTileLayer = null
+
+  baseTileMount = mountBaseLayerForRegion(mapInstance, mode, theme, (label) => {
+    activeBaseMapLabel.value = label
+  })
+  baseTileLayer = baseTileMount.layer
+  activeBaseMapLabel.value = baseTileMount.label
+  ensureMarkerPaneOnTop()
+}
+
+async function recoverBlankTiles(theme: MapThemeId = mapTheme.value) {
+  if (!mapInstance || countLoadedTiles() > 0) return
+
+  if (mapRegion.value === 'global' && runtimeConfig.maps.googleMapsKey) {
+    const googleLayer = await promoteGoogleTileFallback(
+      mapInstance,
+      baseTileMount,
+      theme,
+      (label) => {
+        activeBaseMapLabel.value = label
+      }
+    )
+    if (googleLayer) {
+      baseTileMount = null
+      baseTileLayer = googleLayer
+      refreshMapTiles()
+      return
+    }
   }
 
-  const layer = createFastBaseLayerForRegion(mode, theme)
-  baseTileLayer = layer
-  layer.addTo(mapInstance)
-  ensureMarkerPaneOnTop()
+  if (mapRegion.value === 'global') {
+    setMapRegion('china', false)
+    applyFastBaseLayer('china', theme)
+    refreshMarkers()
+    refreshMapTiles()
+  }
 }
 
 function switchMapTheme(theme: MapThemeId) {
@@ -495,12 +536,17 @@ async function initMap() {
     return
   }
 
-  if (isMapBoundToContainer()) {
+  if (isMapBoundToContainer() && countLoadedTiles() > 0) {
     mapInitError.value = ''
     mapReady.value = true
     mapInitializing.value = false
     void nextTick(refreshMapTiles)
     return
+  }
+
+  if (isMapBoundToContainer()) {
+    destroyMapIfNeeded()
+    if (mapContainer.value) resetMapContainer(mapContainer.value)
   }
 
   destroyMapIfNeeded()
@@ -538,6 +584,10 @@ async function initMap() {
       refreshMapTiles()
       refreshMarkers()
     })
+
+    window.setTimeout(() => {
+      void recoverBlankTiles()
+    }, 3500)
 
     scheduleIdle(() => {
       void autoLocateOnIdle()
@@ -1028,6 +1078,10 @@ function handleDocumentClick(event: MouseEvent) {
 onMounted(() => {
   warmMapTileConnections(mapRegion.value)
 
+  if (runtimeConfig.maps.googleMapsKey) {
+    void loadGoogleMapsJs({ places: true })
+  }
+
   const cached = readCachedNomadSpots()
   if (cached?.length) {
     locations.value = cached.map(mapSpotToLocation)
@@ -1452,7 +1506,7 @@ onUnmounted(() => {
 
     <!-- 底部归属信息 -->
     <div v-if="mapReady" class="map-engine-badge">
-      {{ themeLabel }} · {{ baseMapLabel }} · {{ searchProviderLabel }} · Leaflet
+      {{ themeLabel }} · {{ activeBaseMapLabel || baseMapLabel }} · {{ searchProviderLabel }} · Leaflet
     </div>
   </div>
 </template>

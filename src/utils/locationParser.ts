@@ -9,6 +9,7 @@
  */
 
 import { runtimeConfig } from '@/config/app'
+import { loadGoogleMapsJs } from '@/utils/googleMapsLoader'
 import { searchGooglePlacesByText } from '@/utils/googlePlaces'
 
 export interface ParsedLocation {
@@ -722,7 +723,7 @@ export interface PlaceSearchOptions {
 const NOMINATIM_HEADERS = { 'User-Agent': 'WorkWork-NomadMap/1.0' }
 const PLACE_SEARCH_LIMIT = 10
 
-let googlePlacesScriptPromise: Promise<GoogleMapsNamespace | null> | null = null
+
 let googlePlacesService: GoogleMapsPlacesService | null = null
 
 function isValidPlaceCoord(lat: number, lng: number): boolean {
@@ -831,26 +832,12 @@ function buildSearchQueryVariants(query: string): string[] {
 }
 
 async function loadGooglePlacesLibrary(): Promise<GoogleMapsNamespace | null> {
-  const key = runtimeConfig.maps.googleMapsKey
-  if (!key) return null
-
+  if (!runtimeConfig.maps.googleMapsKey) return null
   if (typeof window === 'undefined') return null
-  if (window.google?.maps?.places) return window.google
 
-  if (!googlePlacesScriptPromise) {
-    googlePlacesScriptPromise = new Promise((resolve) => {
-      const callbackName = '__gmapsPlacesInit'
-      window[callbackName] = () => resolve(window.google ?? null)
-
-      const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&callback=${callbackName}`
-      script.async = true
-      script.onerror = () => resolve(null)
-      document.head.appendChild(script)
-    })
-  }
-
-  return googlePlacesScriptPromise
+  const ready = await loadGoogleMapsJs({ places: true })
+  if (!ready || !window.google?.maps?.places) return null
+  return window.google
 }
 
 async function getGooglePlacesService(): Promise<GoogleMapsPlacesService | null> {
