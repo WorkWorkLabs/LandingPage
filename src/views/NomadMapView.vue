@@ -429,6 +429,20 @@ function syncMapPickMode() {
 // ============================================
 // Leaflet 地图初始化
 // ============================================
+function ensureMarkerPaneOnTop() {
+  if (!mapInstance) return
+
+  const panes = ['tilePane', 'overlayPane', 'markerPane', 'tooltipPane', 'popupPane'] as const
+  const zIndexes = [200, 400, 650, 700, 800]
+
+  panes.forEach((pane, index) => {
+    const el = mapInstance!.getPane(pane)
+    if (el) el.style.zIndex = String(zIndexes[index])
+  })
+
+  markerGroup?.bringToFront()
+}
+
 async function swapBaseLayer(mode: MapRegionMode) {
   if (!mapInstance) return
 
@@ -440,6 +454,7 @@ async function swapBaseLayer(mode: MapRegionMode) {
   const layer = await createBaseLayerForRegion(mode)
   baseTileLayer = layer
   layer.addTo(mapInstance)
+  ensureMarkerPaneOnTop()
 }
 
 async function switchMapRegion(mode: MapRegionMode) {
@@ -496,6 +511,7 @@ async function initMap() {
 
   // 添加标记点
   refreshMarkers()
+  ensureMarkerPaneOnTop()
   mapReady.value = true
   mapInitializing.value = false
 
@@ -651,8 +667,16 @@ function refreshMarkersNow() {
   filteredLocations.value.forEach((loc) => {
     const icon = createMarkerIcon(loc)
     const [dLat, dLng] = displayLatLng(loc.lat, loc.lng)
-    const marker = L.marker([dLat, dLng], { icon })
-    marker.on('click', () => openDetail(loc))
+    const marker = L.marker([dLat, dLng], {
+      icon,
+      interactive: true,
+      riseOnHover: true,
+      riseOffset: 1000,
+    })
+    marker.on('click', (event) => {
+      L.DomEvent.stopPropagation(event)
+      void openDetail(loc)
+    })
     markerGroup!.addLayer(marker)
   })
 }
@@ -2684,5 +2708,29 @@ onUnmounted(() => {
 .nomad-marker {
   background: transparent !important;
   border: none !important;
+  pointer-events: auto !important;
+}
+
+.nomad-marker > div {
+  pointer-events: auto !important;
+}
+
+/*
+ * Google Mutant 底图会插入可交互层，挡住 Leaflet 标记点击
+ * 参考: leaflet.gridlayer.googlemutant 官方建议
+ */
+.leaflet-google-mutant,
+.leaflet-google-mutant * {
+  pointer-events: none !important;
+}
+
+.leaflet-pane.leaflet-marker-pane,
+.leaflet-pane.leaflet-overlay-pane {
+  pointer-events: none;
+}
+
+.leaflet-pane.leaflet-marker-pane .leaflet-marker-icon,
+.leaflet-pane.leaflet-marker-pane .leaflet-interactive {
+  pointer-events: auto !important;
 }
 </style>
