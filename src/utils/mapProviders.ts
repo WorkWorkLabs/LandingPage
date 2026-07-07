@@ -3,7 +3,12 @@ import { runtimeConfig } from '@/config/app'
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from '@/constants/map'
 import { gcj02ToWgs84, wgs84ToGcj02 } from '@/utils/locationParser'
 import { loadGoogleMapsJs } from '@/utils/googleMapsLoader'
-import { GOOGLE_MAPS_HAND_DRAWN_STYLE } from '@/utils/mapStyles'
+import {
+  getAmapTileStyleParam,
+  getCartoVariant,
+  getGoogleMapStyle,
+  type MapThemeId,
+} from '@/utils/mapStyles'
 
 export type MapRegionMode = 'china' | 'global'
 export type MapSearchProvider = 'amap' | 'google'
@@ -75,9 +80,10 @@ const FAST_TILE_OPTIONS = {
   maxNativeZoom: 18,
 } as const
 
-export function createAmapBaseLayer(): L.TileLayer {
+export function createAmapBaseLayer(theme: MapThemeId = 'journal'): L.TileLayer {
+  const style = getAmapTileStyleParam(theme)
   return L.tileLayer(
-    'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+    `https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=${style}&x={x}&y={y}&z={z}`,
     {
       subdomains: ['1', '2', '3', '4'],
       maxZoom: 18,
@@ -87,22 +93,28 @@ export function createAmapBaseLayer(): L.TileLayer {
   )
 }
 
+export function createCartoLayerForTheme(theme: MapThemeId = 'journal'): L.TileLayer {
+  const variant = getCartoVariant(theme)
+  return L.tileLayer(`https://{s}.basemaps.cartocdn.com/${variant}/{z}/{x}/{y}{r}.png`, {
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19,
+    subdomains: 'abcd',
+    ...FAST_TILE_OPTIONS,
+  })
+}
+
+/** @deprecated 使用 createCartoLayerForTheme */
 export function createCartoFallbackLayer(): L.TileLayer {
-  return L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 19,
-      subdomains: 'abcd',
-      ...FAST_TILE_OPTIONS,
-    }
-  )
+  return createCartoLayerForTheme('journal')
 }
 
 /** 同步快速底图 — 用于首屏，绝不阻塞 */
-export function createFastBaseLayerForRegion(mode: MapRegionMode): L.Layer {
-  return mode === 'china' ? createAmapBaseLayer() : createCartoFallbackLayer()
+export function createFastBaseLayerForRegion(
+  mode: MapRegionMode,
+  theme: MapThemeId = 'journal'
+): L.Layer {
+  return mode === 'china' ? createAmapBaseLayer(theme) : createCartoLayerForTheme(theme)
 }
 
 async function withTimeout<T>(promise: Promise<T>, fallback: T, ms = LAYER_LOAD_TIMEOUT_MS): Promise<T> {
@@ -114,7 +126,7 @@ async function withTimeout<T>(promise: Promise<T>, fallback: T, ms = LAYER_LOAD_
   ])
 }
 
-async function createGoogleMutantLayer(): Promise<L.Layer | null> {
+async function createGoogleMutantLayer(theme: MapThemeId = 'journal'): Promise<L.Layer | null> {
   if (!runtimeConfig.maps.googleMapsKey) return null
 
   const ready = await loadGoogleMapsJs()
@@ -126,7 +138,7 @@ async function createGoogleMutantLayer(): Promise<L.Layer | null> {
     )
     return new GoogleMutant({
       type: 'roadmap',
-      styles: GOOGLE_MAPS_HAND_DRAWN_STYLE,
+      styles: getGoogleMapStyle(theme),
       maxZoom: 19,
     }) as unknown as L.Layer
   } catch (error) {
@@ -136,25 +148,27 @@ async function createGoogleMutantLayer(): Promise<L.Layer | null> {
 }
 
 /** 国外模式尝试加载 Google 底图，超时或失败则回退 CARTO */
-export async function createGoogleBaseLayerWithFallback(): Promise<L.Layer> {
-  const fallback = createCartoFallbackLayer()
-  const googleLayer = await withTimeout(createGoogleMutantLayer(), null)
+export async function createGoogleBaseLayerWithFallback(theme: MapThemeId = 'journal'): Promise<L.Layer> {
+  const fallback = createCartoLayerForTheme(theme)
+  const googleLayer = await withTimeout(createGoogleMutantLayer(theme), null)
   return googleLayer ?? fallback
 }
 
 export async function createBaseLayerForRegion(
   mode: MapRegionMode,
-  options: { preferFast?: boolean } = {}
+  options: { preferFast?: boolean; theme?: MapThemeId } = {}
 ): Promise<L.Layer> {
+  const theme = options.theme ?? 'journal'
+
   if (mode === 'china') {
-    return createAmapBaseLayer()
+    return createAmapBaseLayer(theme)
   }
 
   if (options.preferFast) {
-    return createCartoFallbackLayer()
+    return createCartoLayerForTheme(theme)
   }
 
-  return createGoogleBaseLayerWithFallback()
+  return createGoogleBaseLayerWithFallback(theme)
 }
 
 export function getInitialZoom(): number {
