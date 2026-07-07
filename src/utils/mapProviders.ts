@@ -2,11 +2,9 @@ import L from 'leaflet'
 import { runtimeConfig } from '@/config/app'
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from '@/constants/map'
 import { gcj02ToWgs84, wgs84ToGcj02 } from '@/utils/locationParser'
-import { loadGoogleMapsJs } from '@/utils/googleMapsLoader'
 import {
   getAmapTileStyleParam,
   getCartoVariant,
-  getGoogleMapStyle,
   type MapThemeId,
 } from '@/utils/mapStyles'
 
@@ -14,8 +12,6 @@ export type MapRegionMode = 'china' | 'global'
 export type MapSearchProvider = 'amap' | 'google'
 
 export const MAP_REGION_STORAGE_KEY = 'workwork-map-region'
-
-const LAYER_LOAD_TIMEOUT_MS = 6000
 
 export const CHINA_DEFAULT_CENTER = { lat: 31.2304, lng: 121.4737 }
 export const GLOBAL_DEFAULT_CENTER = DEFAULT_CENTER
@@ -31,8 +27,15 @@ export function persistMapRegion(mode: MapRegionMode): void {
   localStorage.setItem(MAP_REGION_STORAGE_KEY, mode)
 }
 
-export function getSearchProviderForRegion(mode: MapRegionMode): MapSearchProvider {
-  return mode === 'china' ? 'amap' : 'google'
+/** 地点搜索/地理编码统一走 Google（有 Key 时） */
+export function getMapSearchProvider(): MapSearchProvider {
+  if (runtimeConfig.maps.googleMapsKey) return 'google'
+  return 'amap'
+}
+
+/** @deprecated 搜索已与区域解耦，请使用 getMapSearchProvider */
+export function getSearchProviderForRegion(_mode: MapRegionMode): MapSearchProvider {
+  return getMapSearchProvider()
 }
 
 export function getDefaultCenterForRegion(mode: MapRegionMode): { lat: number; lng: number } {
@@ -43,8 +46,18 @@ export function getRegionLabel(mode: MapRegionMode): string {
   return mode === 'china' ? '国内' : '国外'
 }
 
+/** 底图瓦片来源（不含搜索数据源） */
+export function getBaseMapLabel(mode: MapRegionMode): string {
+  return mode === 'china' ? '高德地图' : 'CARTO'
+}
+
+export function getSearchProviderLabel(): string {
+  return runtimeConfig.maps.googleMapsKey ? 'Google 搜索' : '高德搜索'
+}
+
+/** @deprecated 使用 getBaseMapLabel */
 export function getProviderLabel(mode: MapRegionMode): string {
-  return mode === 'china' ? '高德地图' : 'Google Maps'
+  return getBaseMapLabel(mode)
 }
 
 /** WGS84 存储坐标 → 当前底图显示坐标 */
@@ -117,58 +130,12 @@ export function createFastBaseLayerForRegion(
   return mode === 'china' ? createAmapBaseLayer(theme) : createCartoLayerForTheme(theme)
 }
 
-async function withTimeout<T>(promise: Promise<T>, fallback: T, ms = LAYER_LOAD_TIMEOUT_MS): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((resolve) => {
-      window.setTimeout(() => resolve(fallback), ms)
-    }),
-  ])
-}
-
-async function createGoogleMutantLayer(theme: MapThemeId = 'journal'): Promise<L.Layer | null> {
-  if (!runtimeConfig.maps.googleMapsKey) return null
-
-  const ready = await loadGoogleMapsJs()
-  if (!ready) return null
-
-  try {
-    const { default: GoogleMutant } = await import(
-      'leaflet.gridlayer.googlemutant/src/Leaflet.GoogleMutant.mjs'
-    )
-    return new GoogleMutant({
-      type: 'roadmap',
-      styles: getGoogleMapStyle(theme),
-      maxZoom: 19,
-    }) as unknown as L.Layer
-  } catch (error) {
-    console.warn('Google Mutant layer failed:', error)
-    return null
-  }
-}
-
-/** 国外模式尝试加载 Google 底图，超时或失败则回退 CARTO */
-export async function createGoogleBaseLayerWithFallback(theme: MapThemeId = 'journal'): Promise<L.Layer> {
-  const fallback = createCartoLayerForTheme(theme)
-  const googleLayer = await withTimeout(createGoogleMutantLayer(theme), null)
-  return googleLayer ?? fallback
-}
-
 export async function createBaseLayerForRegion(
   mode: MapRegionMode,
   options: { preferFast?: boolean; theme?: MapThemeId } = {}
 ): Promise<L.Layer> {
   const theme = options.theme ?? 'journal'
-
-  if (mode === 'china') {
-    return createAmapBaseLayer(theme)
-  }
-
-  if (options.preferFast) {
-    return createCartoLayerForTheme(theme)
-  }
-
-  return createGoogleBaseLayerWithFallback(theme)
+  return createFastBaseLayerForRegion(mode, theme)
 }
 
 export function getInitialZoom(): number {

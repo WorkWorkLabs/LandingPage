@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { isInChina } from '@/constants/map'
 import {
   type MapRegionMode,
-  getProviderLabel,
+  getBaseMapLabel,
   getRegionLabel,
   persistMapRegion,
   readStoredMapRegion,
@@ -14,7 +14,9 @@ let regionPreferenceLocked = Boolean(readStoredMapRegion())
 
 export function useMapRegion() {
   const regionLabel = computed(() => getRegionLabel(mapRegion.value))
-  const providerLabel = computed(() => getProviderLabel(mapRegion.value))
+  const baseMapLabel = computed(() => getBaseMapLabel(mapRegion.value))
+  /** @deprecated 使用 baseMapLabel */
+  const providerLabel = baseMapLabel
   const isChinaMode = computed(() => mapRegion.value === 'china')
 
   function setMapRegion(mode: MapRegionMode, persist = true) {
@@ -42,6 +44,7 @@ export function useMapRegion() {
     mapRegion,
     regionMenuOpen,
     regionLabel,
+    baseMapLabel,
     providerLabel,
     isChinaMode,
     setMapRegion,

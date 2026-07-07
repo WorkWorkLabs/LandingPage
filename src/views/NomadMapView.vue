@@ -15,12 +15,12 @@ import { useMapRegion } from '@/composables/useMapRegion'
 import { useMapTheme } from '@/composables/useMapTheme'
 import { runtimeConfig } from '@/config/app'
 import {
-  createBaseLayerForRegion,
   createFastBaseLayerForRegion,
   fromMapDisplayCoords,
   getDefaultCenterForRegion,
   getInitialZoom,
-  getSearchProviderForRegion,
+  getMapSearchProvider,
+  getSearchProviderLabel,
   toMapDisplayCoords,
   type MapRegionMode,
 } from '@/utils/mapProviders'
@@ -49,7 +49,7 @@ const {
   mapRegion,
   regionMenuOpen,
   regionLabel,
-  providerLabel,
+  baseMapLabel,
   setMapRegion,
   toggleRegionMenu,
   closeRegionMenu,
@@ -91,36 +91,30 @@ const addSpotLng = ref(getDefaultCenterForRegion(mapRegion.value).lng)
 // 用于外部地图搜索
 const searchName = ref('')
 
-// 搜索提供商和结果（随国内/国外模式自动切换）
-const searchProvider = computed(() => getSearchProviderForRegion(mapRegion.value))
+// 搜索统一走 Google Places（底图与搜索数据源分离）
+const searchProvider = computed(() => getMapSearchProvider())
+const searchProviderLabel = computed(() => getSearchProviderLabel())
 const searchResults = ref<PlaceSearchResult[]>([])
 const searchEmpty = ref(false)
 const isSearching = ref(false)
 const detailRegionLoading = ref(false)
 const showLoginReminder = ref(false)
 const switchingRegion = ref(false)
-const usingGoogleBaseMap = ref(false)
 
 const hasGoogleMapsKey = computed(() => Boolean(runtimeConfig.maps.googleMapsKey))
-const hasAmapKey = computed(() => Boolean(runtimeConfig.maps.amapKey))
 
 const searchEmptyMessage = computed(() => {
-  if (mapRegion.value === 'china') {
-    return hasAmapKey.value
-      ? '未找到相关地点。可尝试更简短的关键词、补充城市名，或粘贴高德/百度地图分享链接。'
-      : '未找到相关地点。请配置高德 Key，或粘贴地图分享链接。'
+  if (hasGoogleMapsKey.value) {
+    return '未找到相关地点。可尝试更简短的关键词、补充城市或地区名，也可以直接粘贴 Google 地图分享链接。'
   }
-
-  return hasGoogleMapsKey.value
-    ? '未找到相关地点。可尝试更简短的关键词、补充城市或地区名，也可以直接粘贴 Google 地图分享链接。'
-    : '未找到相关地点。请配置 Google Maps Key，或粘贴 Google 地图分享链接。'
+  return '未找到相关地点。请配置 Google Maps Key，或粘贴地图分享链接。'
 })
 
 const searchHintMessage = computed(() => {
-  if (mapRegion.value === 'china') {
-    return '当前使用高德地图搜索中国大陆地点，也可直接粘贴地图链接。'
+  if (hasGoogleMapsKey.value) {
+    return '地点搜索使用 Google Maps 数据，底图保持 CARTO/高德瓦片显示。也可直接粘贴地图链接。'
   }
-  return '当前使用 Google Maps 搜索海外地点，也可直接粘贴 Google 地图分享链接。'
+  return '请配置 Google Maps Key 以启用地点搜索。'
 })
 
 function displayLatLng(lat: number, lng: number): [number, number] {
@@ -430,49 +424,7 @@ function applyFastBaseLayer(mode: MapRegionMode = mapRegion.value, theme: MapThe
   const layer = createFastBaseLayerForRegion(mode, theme)
   baseTileLayer = layer
   layer.addTo(mapInstance)
-  usingGoogleBaseMap.value = false
   ensureMarkerPaneOnTop()
-}
-
-async function swapBaseLayer(
-  mode: MapRegionMode = mapRegion.value,
-  options: { preferFast?: boolean; theme?: MapThemeId } = {}
-) {
-  if (!mapInstance) return
-
-  const theme = options.theme ?? mapTheme.value
-
-  if (baseTileLayer) {
-    mapInstance.removeLayer(baseTileLayer)
-    baseTileLayer = null
-  }
-
-  if (options.preferFast) {
-    applyFastBaseLayer(mode, theme)
-    return
-  }
-
-  try {
-    const layer = await createBaseLayerForRegion(mode, { theme })
-    baseTileLayer = layer
-    layer.addTo(mapInstance)
-    usingGoogleBaseMap.value = mode === 'global' && layer.constructor.name === 'GoogleMutant'
-    ensureMarkerPaneOnTop(true)
-  } catch (error) {
-    console.warn('swapBaseLayer failed, using fast fallback:', error)
-    applyFastBaseLayer(mode, theme)
-  }
-}
-
-async function upgradeToGoogleBaseMap(theme: MapThemeId = mapTheme.value) {
-  if (!mapInstance || mapRegion.value !== 'global' || usingGoogleBaseMap.value) return
-
-  try {
-    await swapBaseLayer('global', { theme })
-    void nextTick(refreshMapTiles)
-  } catch {
-    // 保持 CARTO 底图即可
-  }
 }
 
 function switchMapTheme(theme: MapThemeId) {
@@ -480,13 +432,6 @@ function switchMapTheme(theme: MapThemeId) {
 
   setMapTheme(theme)
   applyFastBaseLayer(mapRegion.value, theme)
-
-  if (mapRegion.value === 'global') {
-    scheduleIdle(() => {
-      void upgradeToGoogleBaseMap(theme)
-    }, 400)
-  }
-
   void nextTick(refreshMapTiles)
 }
 
@@ -502,9 +447,6 @@ async function autoLocateOnIdle() {
 
   if (mapRegion.value !== prevRegion) {
     applyFastBaseLayer(mapRegion.value)
-    scheduleIdle(() => {
-      void upgradeToGoogleBaseMap()
-    }, 4000)
   }
 
   setUserLocationMarker(userPos)
@@ -535,12 +477,6 @@ async function switchMapRegion(mode: MapRegionMode) {
     if (userLocation.value) setUserLocationMarker(userLocation.value)
     if (showAddSpot.value) updateAddPreviewMarker()
     void nextTick(refreshMapTiles)
-
-    if (mode === 'global') {
-      scheduleIdle(() => {
-        void upgradeToGoogleBaseMap()
-      }, 3000)
-    }
   } finally {
     switchingRegion.value = false
     mapInitializing.value = false
@@ -602,12 +538,6 @@ async function initMap() {
       refreshMapTiles()
       refreshMarkers()
     })
-
-    if (mapRegion.value === 'global') {
-      scheduleIdle(() => {
-        void upgradeToGoogleBaseMap()
-      }, 5000)
-    }
 
     scheduleIdle(() => {
       void autoLocateOnIdle()
@@ -1219,7 +1149,7 @@ onUnmounted(() => {
             @click="switchMapRegion('china')"
           >
             <span class="map-region-option-name">国内</span>
-            <span class="map-region-option-desc">高德地图 · 中国大陆</span>
+            <span class="map-region-option-desc">高德底图 · 中国大陆坐标</span>
           </button>
           <button
             type="button"
@@ -1229,7 +1159,7 @@ onUnmounted(() => {
             @click="switchMapRegion('global')"
           >
             <span class="map-region-option-name">国外</span>
-            <span class="map-region-option-desc">Google Maps · 海外地区</span>
+            <span class="map-region-option-desc">CARTO 底图 · 海外坐标系</span>
           </button>
         </div>
       </Transition>
@@ -1457,7 +1387,7 @@ onUnmounted(() => {
             <div class="search-toolbar">
               <div class="search-provider-badge">
                 <span class="search-provider-badge-label">当前搜索</span>
-                <span class="search-provider-badge-value">{{ providerLabel }}</span>
+                <span class="search-provider-badge-value">{{ searchProviderLabel }}</span>
               </div>
               <button type="button" class="search-submit-btn" @click="searchPOI" :disabled="isSearching">
                 <LoadingSpinner v-if="isSearching" size="sm" inline label="搜索中" />
@@ -1522,7 +1452,7 @@ onUnmounted(() => {
 
     <!-- 底部归属信息 -->
     <div v-if="mapReady" class="map-engine-badge">
-      {{ themeLabel }} · {{ providerLabel }}{{ mapRegion === 'global' && !usingGoogleBaseMap ? ' (加载中)' : '' }} · Leaflet
+      {{ themeLabel }} · {{ baseMapLabel }} · {{ searchProviderLabel }} · Leaflet
     </div>
   </div>
 </template>
