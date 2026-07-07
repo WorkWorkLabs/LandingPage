@@ -56,7 +56,7 @@ const selectedLocation = ref<MapLocation | null>(null)
 const showDetail = ref(false)
 const showAddSpot = ref(false)
 const mapReady = ref(false)
-const mapInitializing = ref(true)
+const mapInitializing = ref(false)
 const mapLoading = ref(false)
 const mapInitError = ref('')
 const mapDataError = ref('')
@@ -434,6 +434,15 @@ function syncMapPickMode() {
 // ============================================
 type LeafletContainer = HTMLElement & { _leaflet_id?: number }
 
+function isMapBoundToContainer(): boolean {
+  if (!mapInstance || !mapContainer.value) return false
+  try {
+    return mapInstance.getContainer() === mapContainer.value
+  } catch {
+    return false
+  }
+}
+
 function destroyMapIfNeeded() {
   if (mapInstance) {
     mapInstance.off('click', handleMapClickForAdd)
@@ -447,12 +456,12 @@ function destroyMapIfNeeded() {
   mapReady.value = false
 }
 
-function prepareMapContainer(container: HTMLElement) {
+function resetMapContainer(container: HTMLElement) {
   const leafletContainer = container as LeafletContainer
   if (leafletContainer._leaflet_id !== undefined) {
-    container.replaceChildren()
     delete leafletContainer._leaflet_id
   }
+  container.replaceChildren()
 }
 
 function ensureMarkerPaneOnTop() {
@@ -472,8 +481,9 @@ function ensureMarkerPaneOnTop() {
 async function swapBaseLayer(mode: MapRegionMode, options: { preferFast?: boolean } = {}) {
   if (!mapInstance) return
 
-  if (baseTileLayer) {
-    mapInstance.removeLayer(baseTileLayer)
+  const previousLayer = baseTileLayer
+  if (previousLayer) {
+    mapInstance.removeLayer(previousLayer)
     baseTileLayer = null
   }
 
@@ -546,11 +556,16 @@ async function initMap() {
     return
   }
 
-  if (mapInstance) {
+  if (isMapBoundToContainer()) {
     mapInitError.value = ''
     mapReady.value = true
+    mapInitializing.value = false
+    void nextTick(refreshMapTiles)
     return
   }
+
+  destroyMapIfNeeded()
+  resetMapContainer(mapContainer.value)
 
   mapInitError.value = ''
   mapInitializing.value = true
@@ -559,8 +574,6 @@ async function initMap() {
   }, 10000)
 
   try {
-    prepareMapContainer(mapContainer.value)
-
     const center = getDefaultCenterForRegion(mapRegion.value)
     const [dLat, dLng] = displayLatLng(center.lat, center.lng)
     const zoom = getInitialZoom()
@@ -583,7 +596,9 @@ async function initMap() {
     ensureMarkerPaneOnTop()
     mapReady.value = true
 
-    void nextTick(refreshMapTiles)
+    await nextTick()
+    refreshMapTiles()
+    window.setTimeout(refreshMapTiles, 120)
 
     // 国外模式后台升级为 Google 底图
     if (mapRegion.value === 'global') {
@@ -612,6 +627,9 @@ async function initMap() {
     console.error('initMap failed:', error)
     if (!mapReady.value) {
       destroyMapIfNeeded()
+      if (mapContainer.value) {
+        resetMapContainer(mapContainer.value)
+      }
       mapInitError.value = '地图初始化失败，请刷新页面重试'
     }
   } finally {
