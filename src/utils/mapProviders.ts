@@ -68,6 +68,13 @@ export function fromMapDisplayCoords(
   return { lat, lng }
 }
 
+const FAST_TILE_OPTIONS = {
+  updateWhenZooming: false,
+  updateWhenIdle: true,
+  keepBuffer: 2,
+  maxNativeZoom: 18,
+} as const
+
 export function createAmapBaseLayer(): L.TileLayer {
   return L.tileLayer(
     'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
@@ -75,8 +82,7 @@ export function createAmapBaseLayer(): L.TileLayer {
       subdomains: ['1', '2', '3', '4'],
       maxZoom: 18,
       attribution: '&copy; <a href="https://www.amap.com/">高德地图</a>',
-      updateWhenZooming: false,
-      keepBuffer: 4,
+      ...FAST_TILE_OPTIONS,
     }
   )
 }
@@ -89,8 +95,7 @@ export function createCartoFallbackLayer(): L.TileLayer {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
       maxZoom: 19,
       subdomains: 'abcd',
-      updateWhenZooming: false,
-      keepBuffer: 4,
+      ...FAST_TILE_OPTIONS,
     }
   )
 }

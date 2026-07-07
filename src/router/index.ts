@@ -7,12 +7,15 @@ const Home = () => import('@/views/HomeView.vue')
 const Login = () => import('@/views/LoginView.vue')
 const ArticleDetail = () => import('@/views/ArticleDetailView.vue')
 const ArticlePublish = () => import('@/views/ArticlePublishView.vue')
+import { prefetchMapBundle } from '@/utils/mapPrefetch'
+import { prefetchNomadSpots } from '@/services/nomadSpots'
+
 const NomadMap = () => import('@/views/NomadMapView.vue')
 
 let nomadMapPrefetch: Promise<unknown> | null = null
 export function prefetchNomadMap() {
   if (!nomadMapPrefetch) {
-    nomadMapPrefetch = NomadMap()
+    nomadMapPrefetch = Promise.all([prefetchMapBundle(), NomadMap(), prefetchNomadSpots()])
   }
   return nomadMapPrefetch
 }
@@ -108,6 +111,10 @@ router.beforeEach(async (to) => {
     if (metaDescription) {
       metaDescription.setAttribute('content', to.meta.description as string)
     }
+  }
+
+  if (to.name === 'NomadMap') {
+    prefetchNomadMap()
   }
 
   if (to.meta?.requiresAuth) {

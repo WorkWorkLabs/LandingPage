@@ -15,6 +15,9 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
+  optimizeDeps: {
+    include: ['leaflet'],
+  },
   build: {
     target: 'esnext',
     minify: 'esbuild',

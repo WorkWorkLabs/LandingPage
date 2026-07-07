@@ -10,6 +10,7 @@ import {
   type MapLocation,
   type MapCategory,
 } from '@/constants/map'
+import { DEMO_MAP_LOCATIONS } from '@/constants/demoLocations'
 import { useMapRegion } from '@/composables/useMapRegion'
 import { runtimeConfig } from '@/config/app'
 import {
@@ -22,7 +23,14 @@ import {
   toMapDisplayCoords,
   type MapRegionMode,
 } from '@/utils/mapProviders'
-import { createNomadSpot, fetchActiveNomadSpots, updateNomadSpotRegion } from '@/services/nomadSpots'
+import {
+  createNomadSpot,
+  fetchActiveNomadSpots,
+  readCachedNomadSpots,
+  revalidateNomadSpots,
+  updateNomadSpotRegion,
+} from '@/services/nomadSpots'
+import { warmMapTileConnections } from '@/utils/mapPrefetch'
 import type { NomadSpot } from '@/types/database'
 import {
   geocode,
@@ -123,6 +131,15 @@ let userLocationMarker: L.CircleMarker | null = null
 let mapResizeObserver: ResizeObserver | null = null
 let mapRefreshTimer: number | null = null
 let markerRefreshFrame: number | null = null
+const markerIconCache = new Map<MapCategory, L.DivIcon>()
+
+function scheduleIdle(task: () => void, timeout = 2000) {
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(() => task(), { timeout })
+  } else {
+    window.setTimeout(task, 64)
+  }
+}
 
 function isValidCoord(lat: number, lng: number): boolean {
   return (
@@ -172,100 +189,9 @@ function focusMapOnPoint(lat: number, lng: number, zoom = 16, animate = true) {
 }
 
 // ============================================
-// 模拟数据（后续从 Supabase 加载）
+// 地点数据（优先 session 缓存，首屏不阻塞）
 // ============================================
-const locations = ref<MapLocation[]>([
-  {
-    id: '1',
-    name: 'Calm Cafe & Workspace',
-    description: '清迈古城内最受欢迎的数字游民工作空间，WiFi 稳定，咖啡好喝，插座充足。',
-    category: 'cafe',
-    lat: 18.7883,
-    lng: 98.9853,
-    city: '清迈',
-    country: '泰国',
-    images: ['https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=600&auto=format&q=75'],
-    author: { name: '小明', avatar: '' },
-    likes: 42,
-    tags: ['咖啡', '办公', 'WiFi'],
-    createdAt: '2025-06-15',
-  },
-  {
-    id: '2',
-    name: '宁曼路共享办公',
-    description: '清迈宁曼路上的联合办公空间，月卡 3500 泰铢，24 小时开放。',
-    category: 'work',
-    lat: 18.7953,
-    lng: 98.9693,
-    city: '清迈',
-    country: '泰国',
-    images: ['https://images.unsplash.com/photo-1497366216548-37526070297c?w=600&auto=format&q=75'],
-    author: { name: '阿花', avatar: '' },
-    likes: 28,
-    tags: ['办公', '24h', '月卡'],
-    createdAt: '2025-06-10',
-  },
-  {
-    id: '3',
-    name: '素帖山日落观景台',
-    description: '清迈最佳日落观赏点，适合傍晚收工后放松。',
-    category: 'outdoor',
-    lat: 18.7723,
-    lng: 98.9693,
-    city: '清迈',
-    country: '泰国',
-    images: ['https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&auto=format&q=75'],
-    author: { name: '旅人A', avatar: '' },
-    likes: 65,
-    tags: ['日落', '免费', '风景'],
-    createdAt: '2025-06-08',
-  },
-  {
-    id: '4',
-    name: '周末夜市美食街',
-    description: '每周六晚的游民聚会点，各种泰北美食，人均 50-100 泰铢。',
-    category: 'event',
-    lat: 18.7863,
-    lng: 98.9883,
-    city: '清迈',
-    country: '泰国',
-    images: ['https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&q=75'],
-    author: { name: '美食家', avatar: '' },
-    likes: 38,
-    tags: ['夜市', '聚会', '便宜'],
-    createdAt: '2025-06-05',
-  },
-  {
-    id: '5',
-    name: '上海武康路咖啡馆',
-    description: '武康路上适合远程办公的安静咖啡馆，拿铁 32 元。',
-    category: 'cafe',
-    lat: 31.2089,
-    lng: 121.4378,
-    city: '上海',
-    country: '中国',
-    images: ['https://images.unsplash.com/photo-1453614512568-c4024d13c247?w=600&auto=format&q=75'],
-    author: { name: '沪漂', avatar: '' },
-    likes: 19,
-    tags: ['咖啡', '安静', '上海'],
-    createdAt: '2025-06-12',
-  },
-  {
-    id: '6',
-    name: '巴厘岛 Canggu 联合办公',
-    description: 'Canggu 最热门的游民办公空间，泳池+健身房，月卡 $150。',
-    category: 'work',
-    lat: -8.6478,
-    lng: 115.1385,
-    city: 'Canggu',
-    country: '印尼',
-    images: ['https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=600&auto=format&q=75'],
-    author: { name: 'Digital Nomad', avatar: '' },
-    likes: 87,
-    tags: ['办公', '泳池', '月卡'],
-    createdAt: '2025-06-01',
-  },
-])
+const locations = ref<MapLocation[]>([])
 
 // ============================================
 // 过滤后的标记点
@@ -464,7 +390,7 @@ function resetMapContainer(container: HTMLElement) {
   container.replaceChildren()
 }
 
-function ensureMarkerPaneOnTop() {
+function ensureMarkerPaneOnTop(raiseMarkers = false) {
   if (!mapInstance) return
 
   const panes = ['tilePane', 'overlayPane', 'markerPane', 'tooltipPane', 'popupPane'] as const
@@ -475,11 +401,28 @@ function ensureMarkerPaneOnTop() {
     if (el) el.style.zIndex = String(zIndexes[index])
   })
 
-  markerGroup?.eachLayer((layer) => {
-    if (typeof layer.bringToFront === 'function') {
-      layer.bringToFront()
-    }
-  })
+  if (raiseMarkers) {
+    markerGroup?.eachLayer((layer) => {
+      if (typeof layer.bringToFront === 'function') {
+        layer.bringToFront()
+      }
+    })
+  }
+}
+
+function applyFastBaseLayer(mode: MapRegionMode) {
+  if (!mapInstance) return
+
+  if (baseTileLayer) {
+    mapInstance.removeLayer(baseTileLayer)
+    baseTileLayer = null
+  }
+
+  const layer = createFastBaseLayerForRegion(mode)
+  baseTileLayer = layer
+  layer.addTo(mapInstance)
+  usingGoogleBaseMap.value = false
+  ensureMarkerPaneOnTop()
 }
 
 async function swapBaseLayer(mode: MapRegionMode, options: { preferFast?: boolean } = {}) {
@@ -491,21 +434,20 @@ async function swapBaseLayer(mode: MapRegionMode, options: { preferFast?: boolea
     baseTileLayer = null
   }
 
+  if (options.preferFast) {
+    applyFastBaseLayer(mode)
+    return
+  }
+
   try {
-    const layer = options.preferFast
-      ? createFastBaseLayerForRegion(mode)
-      : await createBaseLayerForRegion(mode)
+    const layer = await createBaseLayerForRegion(mode)
     baseTileLayer = layer
     layer.addTo(mapInstance)
     usingGoogleBaseMap.value = mode === 'global' && layer.constructor.name === 'GoogleMutant'
-    ensureMarkerPaneOnTop()
+    ensureMarkerPaneOnTop(true)
   } catch (error) {
     console.warn('swapBaseLayer failed, using fast fallback:', error)
-    const fallback = createFastBaseLayerForRegion(mode)
-    baseTileLayer = fallback
-    fallback.addTo(mapInstance)
-    usingGoogleBaseMap.value = false
-    ensureMarkerPaneOnTop()
+    applyFastBaseLayer(mode)
   }
 }
 
@@ -520,6 +462,29 @@ async function upgradeToGoogleBaseMap() {
   }
 }
 
+async function autoLocateOnIdle() {
+  if (!mapInstance) return
+
+  const userPos = await getUserLocation()
+  if (!userPos || !mapInstance) return
+
+  const prevRegion = mapRegion.value
+  userLocation.value = userPos
+  applyRegionFromCoords(userPos.lat, userPos.lng)
+
+  if (mapRegion.value !== prevRegion) {
+    applyFastBaseLayer(mapRegion.value)
+    scheduleIdle(() => {
+      void upgradeToGoogleBaseMap()
+    }, 4000)
+  }
+
+  setUserLocationMarker(userPos)
+  const [flyLat, flyLng] = displayLatLng(userPos.lat, userPos.lng)
+  mapInstance.setView([flyLat, flyLng], runtimeConfig.maps.userZoom, { animate: false })
+  refreshMapTiles()
+}
+
 async function switchMapRegion(mode: MapRegionMode) {
   if (mode === mapRegion.value || switchingRegion.value) return
 
@@ -532,7 +497,7 @@ async function switchMapRegion(mode: MapRegionMode) {
   searchEmpty.value = false
 
   try {
-    await swapBaseLayer(mode, { preferFast: true })
+    applyFastBaseLayer(mode)
 
     const center = getDefaultCenterForRegion(mode)
     const [dLat, dLng] = displayLatLng(center.lat, center.lng)
@@ -544,7 +509,9 @@ async function switchMapRegion(mode: MapRegionMode) {
     void nextTick(refreshMapTiles)
 
     if (mode === 'global') {
-      void upgradeToGoogleBaseMap()
+      scheduleIdle(() => {
+        void upgradeToGoogleBaseMap()
+      }, 3000)
     }
   } finally {
     switchingRegion.value = false
@@ -553,6 +520,10 @@ async function switchMapRegion(mode: MapRegionMode) {
 }
 
 async function initMap() {
+  if (mapContainer.value) {
+    warmMapTileConnections(mapRegion.value)
+  }
+
   await nextTick()
   if (!mapContainer.value) {
     mapInitializing.value = false
@@ -575,7 +546,7 @@ async function initMap() {
   mapInitializing.value = true
   const initSafetyTimer = window.setTimeout(() => {
     mapInitializing.value = false
-  }, 10000)
+  }, 5000)
 
   try {
     const center = getDefaultCenterForRegion(mapRegion.value)
@@ -588,45 +559,31 @@ async function initMap() {
       zoomControl: false,
       attributionControl: true,
       fadeAnimation: false,
+      zoomAnimation: false,
+      markerZoomAnimation: false,
     })
 
-    // 先用同步底图立即显示，避免 Google API 阻塞首屏
-    await swapBaseLayer(mapRegion.value, { preferFast: true })
-
-    L.control.zoom({ position: 'bottomright' }).addTo(mapInstance)
-
-    markerGroup = L.layerGroup().addTo(mapInstance)
-    refreshMarkers()
-    ensureMarkerPaneOnTop()
+    applyFastBaseLayer(mapRegion.value)
     mapReady.value = true
 
-    await nextTick()
-    refreshMapTiles()
-    window.setTimeout(refreshMapTiles, 120)
+    L.control.zoom({ position: 'bottomright' }).addTo(mapInstance)
+    markerGroup = L.layerGroup().addTo(mapInstance)
+    ensureMarkerPaneOnTop()
 
-    // 国外模式后台升级为 Google 底图
+    requestAnimationFrame(() => {
+      refreshMapTiles()
+      refreshMarkers()
+    })
+
     if (mapRegion.value === 'global') {
-      void upgradeToGoogleBaseMap()
+      scheduleIdle(() => {
+        void upgradeToGoogleBaseMap()
+      }, 5000)
     }
 
-    void getUserLocation().then(async (userPos) => {
-      if (!userPos || !mapInstance) return
-
-      const prevRegion = mapRegion.value
-      userLocation.value = userPos
-      applyRegionFromCoords(userPos.lat, userPos.lng)
-
-      if (mapRegion.value !== prevRegion) {
-        await swapBaseLayer(mapRegion.value, { preferFast: true })
-        if (mapRegion.value === 'global') {
-          void upgradeToGoogleBaseMap()
-        }
-      }
-
-      setUserLocationMarker(userPos)
-      const [flyLat, flyLng] = displayLatLng(userPos.lat, userPos.lng)
-      mapInstance.flyTo([flyLat, flyLng], runtimeConfig.maps.userZoom, { duration: 0.8 })
-    })
+    scheduleIdle(() => {
+      void autoLocateOnIdle()
+    }, 2500)
   } catch (error) {
     console.error('initMap failed:', error)
     if (!mapReady.value) {
@@ -723,31 +680,59 @@ function mapSpotToLocation(spot: NomadSpot): MapLocation {
   }
 }
 
+function applyNomadSpots(data: NomadSpot[]) {
+  if (!data.length) return
+  locations.value = data.map(mapSpotToLocation)
+  if (mapReady.value) {
+    scheduleIdle(() => refreshMarkers(), 80)
+  }
+}
+
 async function loadNomadLocations() {
-  mapLoading.value = true
+  const cached = readCachedNomadSpots()
+  if (cached?.length) {
+    applyNomadSpots(cached)
+  }
+
+  mapLoading.value = !cached?.length
   mapDataError.value = ''
 
-  const { data, error } = await fetchActiveNomadSpots()
+  const { data, error, fromCache } = await fetchActiveNomadSpots()
   mapLoading.value = false
 
-  if (error) {
+  if (data.length > 0) {
+    applyNomadSpots(data)
+  } else if (!cached?.length && !error) {
+    locations.value = DEMO_MAP_LOCATIONS
+    scheduleIdle(() => refreshMarkers(), 80)
+  }
+
+  if (error && !data.length && !cached?.length) {
     mapDataError.value = `地图数据加载失败：${error}`
+    locations.value = DEMO_MAP_LOCATIONS
+    scheduleIdle(() => refreshMarkers(), 80)
     return
   }
 
-  if (data.length > 0) {
-    locations.value = data.map(mapSpotToLocation)
+  if (fromCache) {
+    void revalidateNomadSpots().then(({ data: fresh, error: freshError }) => {
+      if (!freshError && fresh.length > 0) {
+        applyNomadSpots(fresh)
+      }
+    })
   }
 }
 
 // ============================================
 // 自定义标记图标
 // ============================================
-function createMarkerIcon(loc: MapLocation): L.DivIcon {
-  const color = getCategoryColor(loc.category)
-  const emoji = getCategoryEmoji(loc.category)
+function createMarkerIcon(category: MapCategory): L.DivIcon {
+  const cached = markerIconCache.get(category)
+  if (cached) return cached
 
-  return L.divIcon({
+  const color = getCategoryColor(category)
+  const emoji = getCategoryEmoji(category)
+  const icon = L.divIcon({
     className: 'nomad-marker',
     html: `
       <div style="
@@ -758,7 +743,6 @@ function createMarkerIcon(loc: MapLocation): L.DivIcon {
         background: ${color};
         display: flex; align-items: center; justify-content: center;
         font-size: 18px; cursor: pointer;
-        transition: transform 0.2s;
       ">
         ${emoji}
       </div>
@@ -766,6 +750,9 @@ function createMarkerIcon(loc: MapLocation): L.DivIcon {
     iconSize: [44, 44],
     iconAnchor: [22, 22],
   })
+
+  markerIconCache.set(category, icon)
+  return icon
 }
 
 // ============================================
@@ -776,7 +763,7 @@ function refreshMarkersNow() {
   markerGroup.clearLayers()
 
   filteredLocations.value.forEach((loc) => {
-    const icon = createMarkerIcon(loc)
+    const icon = createMarkerIcon(loc.category)
     const [dLat, dLng] = displayLatLng(loc.lat, loc.lng)
     const marker = L.marker([dLat, dLng], {
       icon,
@@ -1081,9 +1068,16 @@ function handleDocumentClick(event: MouseEvent) {
 }
 
 onMounted(() => {
+  warmMapTileConnections(mapRegion.value)
+
+  const cached = readCachedNomadSpots()
+  if (cached?.length) {
+    locations.value = cached.map(mapSpotToLocation)
+  }
+
   void authStore.initialize()
-  void initMap()
   void loadNomadLocations()
+  void initMap()
   document.addEventListener('click', handleDocumentClick)
 
   if (mapContainer.value) {

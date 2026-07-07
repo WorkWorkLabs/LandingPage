@@ -13,18 +13,89 @@ export type CreateNomadSpotInput = {
   images?: string[]
 }
 
-export async function fetchActiveNomadSpots(): Promise<{ data: NomadSpot[]; error: string | null }> {
+const CACHE_KEY = 'workwork-nomad-spots-cache'
+const CACHE_TTL_MS = 5 * 60 * 1000
+const SPOT_COLUMNS =
+  'id,name,description,latitude,longitude,city,country,tags,images,rating,created_at,status'
+
+type SpotCachePayload = {
+  ts: number
+  data: NomadSpot[]
+}
+
+export function readCachedNomadSpots(): NomadSpot[] | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as SpotCachePayload
+    if (!Array.isArray(parsed.data) || Date.now() - parsed.ts > CACHE_TTL_MS) {
+      sessionStorage.removeItem(CACHE_KEY)
+      return null
+    }
+
+    return parsed.data
+  } catch {
+    return null
+  }
+}
+
+function writeNomadSpotsCache(data: NomadSpot[]): void {
+  if (typeof window === 'undefined' || !data.length) return
+
+  try {
+    const payload: SpotCachePayload = { ts: Date.now(), data }
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify(payload))
+  } catch {
+    // quota exceeded — ignore
+  }
+}
+
+async function fetchNomadSpotsFromNetwork(): Promise<{ data: NomadSpot[]; error: string | null }> {
   const { data, error } = await supabase
     .from('nomad_spots')
-    .select('*')
+    .select(SPOT_COLUMNS)
     .eq('status', 'active')
     .order('created_at', { ascending: false })
+    .limit(200)
 
   if (error) {
     return { data: [], error: error.message }
   }
 
-  return { data: data ?? [], error: null }
+  const spots = (data ?? []) as NomadSpot[]
+  writeNomadSpotsCache(spots)
+  return { data: spots, error: null }
+}
+
+let prefetchPromise: Promise<{ data: NomadSpot[]; error: string | null }> | null = null
+
+export function prefetchNomadSpots(): Promise<{ data: NomadSpot[]; error: string | null }> {
+  if (!prefetchPromise) {
+    prefetchPromise = fetchNomadSpotsFromNetwork().finally(() => {
+      prefetchPromise = null
+    })
+  }
+  return prefetchPromise
+}
+
+export async function fetchActiveNomadSpots(): Promise<{
+  data: NomadSpot[]
+  error: string | null
+  fromCache?: boolean
+}> {
+  const cached = readCachedNomadSpots()
+  if (cached?.length) {
+    return { data: cached, error: null, fromCache: true }
+  }
+
+  return fetchNomadSpotsFromNetwork()
+}
+
+export async function revalidateNomadSpots(): Promise<{ data: NomadSpot[]; error: string | null }> {
+  return fetchNomadSpotsFromNetwork()
 }
 
 export async function createNomadSpot(input: CreateNomadSpotInput): Promise<{ data: NomadSpot | null; error: string | null }> {
@@ -42,14 +113,14 @@ export async function createNomadSpot(input: CreateNomadSpotInput): Promise<{ da
       images: input.images ?? [],
       status: 'active',
     })
-    .select('*')
+    .select(SPOT_COLUMNS)
     .single()
 
   if (error) {
     return { data: null, error: error.message }
   }
 
-  return { data, error: null }
+  return { data: data as NomadSpot, error: null }
 }
 
 export async function updateNomadSpotRegion(
