@@ -714,10 +714,19 @@ export interface PlaceSearchResult {
 
 export type PlaceSearchProvider = 'google' | 'amap' | 'baidu' | 'auto'
 
+export type MapSearchRegion = 'china' | 'global'
+
 export interface PlaceSearchOptions {
   provider?: PlaceSearchProvider
   bias?: { lat: number; lng: number }
   limit?: number
+  /** 国内模式时优先使用中国区 OSM 搜索参数 */
+  region?: MapSearchRegion
+}
+
+type NominatimSearchOptions = {
+  countrycodes?: string
+  language?: string
 }
 
 const NOMINATIM_HEADERS = { 'User-Agent': 'WorkWork-NomadMap/1.0' }
@@ -769,6 +778,8 @@ function rankPlaceResults(results: PlaceSearchResult[], query: string): PlaceSea
 
     if (nameText.includes(normalizedQuery)) score += 8
     if (result.source === 'google') score += 6
+    if (result.source === 'nominatim' && /[\u4e00-\u9fff]/.test(query)) score += 3
+    if (result.source === 'amap' && /[\u4e00-\u9fff]/.test(query)) score += 4
 
     const combinedText = `${nameText} ${result.address.toLowerCase()}`
     const matchedDistinctive = distinctiveTokens.filter((token) => combinedText.includes(token)).length
@@ -1051,7 +1062,8 @@ async function searchWithPhoton(
 
 async function searchWithNominatim(
   query: string,
-  bias?: { lat: number; lng: number }
+  bias?: { lat: number; lng: number },
+  options: NominatimSearchOptions = {}
 ): Promise<PlaceSearchResult[]> {
   const results: PlaceSearchResult[] = []
 
@@ -1063,14 +1075,21 @@ async function searchWithNominatim(
       addressdetails: '1',
     })
 
+    if (options.countrycodes) {
+      params.set('countrycodes', options.countrycodes)
+    }
+    if (options.language) {
+      params.set('accept-language', options.language)
+    }
+
     if (bias && isValidPlaceCoord(bias.lat, bias.lng)) {
-      const pad = 0.45
+      const pad = options.countrycodes === 'cn' ? 1.2 : 0.45
       const left = bias.lng - pad
       const right = bias.lng + pad
       const top = bias.lat + pad
       const bottom = bias.lat - pad
       params.set('viewbox', `${left},${top},${right},${bottom}`)
-      params.set('bounded', '0')
+      params.set('bounded', options.countrycodes === 'cn' ? '1' : '0')
     }
 
     try {
@@ -1096,6 +1115,42 @@ async function searchWithNominatim(
   }
 
   return results.slice(0, PLACE_SEARCH_LIMIT)
+}
+
+/** 零 Key 国内搜索：Nominatim（中国区参数）+ Photon */
+async function searchWithChinaOsm(
+  query: string,
+  bias?: { lat: number; lng: number }
+): Promise<PlaceSearchResult[]> {
+  const chinaBias =
+    bias && isValidPlaceCoord(bias.lat, bias.lng)
+      ? bias
+      : { lat: 31.2304, lng: 121.4737 }
+
+  const results: PlaceSearchResult[] = []
+
+  const [nominatimResults, photonResults] = await Promise.all([
+    searchWithNominatim(query, chinaBias, { countrycodes: 'cn', language: 'zh-CN' }),
+    searchWithPhoton(query, chinaBias),
+  ])
+
+  mergePlaceResults(results, rankPlaceResults(nominatimResults, query), PLACE_SEARCH_LIMIT)
+  mergePlaceResults(results, rankPlaceResults(photonResults, query), PLACE_SEARCH_LIMIT)
+
+  if (results.length === 0) {
+    const geo = await geocode(query)
+    if (geo && isValidPlaceCoord(geo.lat, geo.lng)) {
+      results.push({
+        name: geo.name || query,
+        lat: geo.lat,
+        lng: geo.lng,
+        address: '',
+        source: 'geocode',
+      })
+    }
+  }
+
+  return results
 }
 
 async function searchWithGlobalProviders(
@@ -1131,8 +1186,10 @@ async function searchWithGlobalProviders(
 
 /**
  * 统一点搜索入口
- * - 有 Key 时走对应地图商
- * - 无结果时自动回退到全球搜索 (Google JS / Photon / Nominatim)
+ * - 有 Google Key 时优先 Google
+ * - 国内零 Key：Nominatim(中国区) + Photon
+ * - 可选高德 Key 增强国内 POI
+ * - 无结果时回退全球 OSM 搜索
  */
 export async function searchPlaces(
   query: string,
@@ -1143,6 +1200,7 @@ export async function searchPlaces(
 
   const provider = options.provider ?? 'auto'
   const bias = options.bias
+  const region = options.region ?? 'global'
   const limit = options.limit ?? PLACE_SEARCH_LIMIT
   const keys = runtimeConfig.maps
 
@@ -1152,6 +1210,16 @@ export async function searchPlaces(
     results = await searchWithGooglePlaces(trimmed, bias)
     if (results.length > 0) {
       return results.slice(0, limit)
+    }
+  }
+
+  if (region === 'china' && provider !== 'google') {
+    const chinaResults = await searchWithChinaOsm(trimmed, bias)
+    mergePlaceResults(results, chinaResults, limit)
+
+    if (keys.amapKey && (provider === 'amap' || provider === 'auto')) {
+      const amapResults = await searchWithAmap(trimmed)
+      mergePlaceResults(results, amapResults, limit)
     }
   } else if (provider === 'amap' && keys.amapKey) {
     results = await searchWithAmap(trimmed)

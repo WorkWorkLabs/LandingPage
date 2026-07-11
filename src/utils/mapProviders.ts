@@ -1,17 +1,12 @@
 import L from 'leaflet'
 import { runtimeConfig } from '@/config/app'
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from '@/constants/map'
-import { gcj02ToWgs84, wgs84ToGcj02 } from '@/utils/locationParser'
 import { loadGoogleMapsJs } from '@/utils/googleMapsLoader'
-import {
-  getAmapTileStyleParam,
-  getCartoVariant,
-  getGoogleMapStyle,
-} from '@/utils/mapStyles'
+import { getCartoVariant, getGoogleMapStyle } from '@/utils/mapStyles'
 import { mountTileLayerWithFallback, type MountedTileLayer } from '@/utils/tileFallback'
 
 export type MapRegionMode = 'china' | 'global'
-export type MapSearchProvider = 'amap' | 'google'
+export type MapSearchProvider = 'osm' | 'amap' | 'google'
 
 export const MAP_REGION_STORAGE_KEY = 'workwork-map-region'
 
@@ -29,15 +24,16 @@ export function persistMapRegion(mode: MapRegionMode): void {
   localStorage.setItem(MAP_REGION_STORAGE_KEY, mode)
 }
 
-/** 地点搜索/地理编码统一走 Google（有 Key 时） */
-export function getMapSearchProvider(): MapSearchProvider {
+/** 地点搜索数据源（与底图瓦片解耦） */
+export function getMapSearchProvider(_region: MapRegionMode = 'global'): MapSearchProvider {
   if (runtimeConfig.maps.googleMapsKey) return 'google'
-  return 'amap'
+  if (runtimeConfig.maps.amapKey) return 'amap'
+  return 'osm'
 }
 
 /** @deprecated 搜索已与区域解耦，请使用 getMapSearchProvider */
-export function getSearchProviderForRegion(_mode: MapRegionMode): MapSearchProvider {
-  return getMapSearchProvider()
+export function getSearchProviderForRegion(mode: MapRegionMode): MapSearchProvider {
+  return getMapSearchProvider(mode)
 }
 
 export function getDefaultCenterForRegion(mode: MapRegionMode): { lat: number; lng: number } {
@@ -48,13 +44,16 @@ export function getRegionLabel(mode: MapRegionMode): string {
   return mode === 'china' ? '国内' : '国外'
 }
 
-/** 底图瓦片来源（不含搜索数据源） */
-export function getBaseMapLabel(mode: MapRegionMode): string {
-  return mode === 'china' ? '高德地图' : 'CARTO'
+/** 底图瓦片来源（国内/国外统一 CARTO 手绘风） */
+export function getBaseMapLabel(_mode: MapRegionMode): string {
+  return 'CARTO'
 }
 
-export function getSearchProviderLabel(): string {
-  return runtimeConfig.maps.googleMapsKey ? 'Google 搜索' : '高德搜索'
+export function getSearchProviderLabel(region: MapRegionMode = 'global'): string {
+  const provider = getMapSearchProvider(region)
+  if (provider === 'google') return 'Google 搜索'
+  if (provider === 'amap') return 'OSM + 高德搜索'
+  return 'OSM 搜索'
 }
 
 /** @deprecated 使用 getBaseMapLabel */
@@ -62,16 +61,8 @@ export function getProviderLabel(mode: MapRegionMode): string {
   return getBaseMapLabel(mode)
 }
 
-/** WGS84 存储坐标 → 当前底图显示坐标 */
-export function toMapDisplayCoords(
-  lat: number,
-  lng: number,
-  mode: MapRegionMode
-): [number, number] {
-  if (mode === 'china') {
-    const [gcjLng, gcjLat] = wgs84ToGcj02(lng, lat)
-    return [gcjLat, gcjLng]
-  }
+/** WGS84 存储坐标 → 底图显示坐标（统一 WGS84，与 CARTO/OSM 对齐） */
+export function toMapDisplayCoords(lat: number, lng: number, _mode: MapRegionMode): [number, number] {
   return [lat, lng]
 }
 
@@ -79,12 +70,8 @@ export function toMapDisplayCoords(
 export function fromMapDisplayCoords(
   lat: number,
   lng: number,
-  mode: MapRegionMode
+  _mode: MapRegionMode
 ): { lat: number; lng: number } {
-  if (mode === 'china') {
-    const [wgsLng, wgsLat] = gcj02ToWgs84(lng, lat)
-    return { lat: wgsLat, lng: wgsLng }
-  }
   return { lat, lng }
 }
 
@@ -95,19 +82,6 @@ const FAST_TILE_OPTIONS = {
   maxNativeZoom: 18,
   className: 'hand-drawn-tile-layer',
 } as const
-
-export function createAmapBaseLayer(): L.TileLayer {
-  const style = getAmapTileStyleParam()
-  return L.tileLayer(
-    `https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=${style}&x={x}&y={y}&z={z}`,
-    {
-      subdomains: ['1', '2', '3', '4'],
-      maxZoom: 18,
-      attribution: '&copy; <a href="https://www.amap.com/">高德地图</a>',
-      ...FAST_TILE_OPTIONS,
-    }
-  )
-}
 
 export function createOsmBaseLayer(): L.TileLayer {
   return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -127,6 +101,11 @@ export function createCartoBaseLayer(): L.TileLayer {
     subdomains: 'abcd',
     ...FAST_TILE_OPTIONS,
   })
+}
+
+/** @deprecated 国内已统一 CARTO 底图，保留仅供兼容 */
+export function createAmapBaseLayer(): L.TileLayer {
+  return createCartoBaseLayer()
 }
 
 /** @deprecated 使用 createCartoBaseLayer */
@@ -160,28 +139,17 @@ export async function createGoogleMutantLayer(): Promise<L.Layer | null> {
   }
 }
 
-/** 同步快速底图（无回退链） */
-export function createFastBaseLayerForRegion(mode: MapRegionMode): L.Layer {
-  return mode === 'china' ? createAmapBaseLayer() : createCartoBaseLayer()
+/** 同步快速底图（国内/国外统一） */
+export function createFastBaseLayerForRegion(_mode: MapRegionMode): L.Layer {
+  return createCartoBaseLayer()
 }
 
-/** 带自动回退的底图：国外 CARTO → OSM；国内 高德 → OSM */
+/** 带自动回退的底图：CARTO → OSM（国内/国外相同） */
 export function mountBaseLayerForRegion(
   map: L.Map,
-  mode: MapRegionMode,
+  _mode: MapRegionMode,
   onSwitch?: (label: string) => void
 ): MountedTileLayer {
-  if (mode === 'china') {
-    return mountTileLayerWithFallback(
-      map,
-      [
-        { id: 'amap', label: '高德地图', create: () => createAmapBaseLayer() },
-        { id: 'osm', label: 'OpenStreetMap', create: () => createOsmBaseLayer() },
-      ],
-      onSwitch
-    )
-  }
-
   return mountTileLayerWithFallback(
     map,
     [
@@ -192,7 +160,7 @@ export function mountBaseLayerForRegion(
   )
 }
 
-/** 瓦片仍未显示时，尝试 Google 底图（仅作最后兜底，搜索仍独立走 Google API） */
+/** 瓦片仍未显示时，尝试 Google 底图（仅作最后兜底） */
 export async function promoteGoogleTileFallback(
   map: L.Map,
   mounted: MountedTileLayer | null,

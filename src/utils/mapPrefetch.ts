@@ -1,7 +1,7 @@
 import { readStoredMapRegion } from '@/utils/mapProviders'
 
 const TILE_ORIGINS = {
-  china: ['https://webrd01.is.autonavi.com', 'https://webrd02.is.autonavi.com'],
+  china: ['https://a.basemaps.cartocdn.com', 'https://b.basemaps.cartocdn.com'],
   global: ['https://a.basemaps.cartocdn.com', 'https://b.basemaps.cartocdn.com'],
 } as const
 

@@ -85,9 +85,9 @@ const addSpotLng = ref(getDefaultCenterForRegion(mapRegion.value).lng)
 // 用于外部地图搜索
 const searchName = ref('')
 
-// 搜索统一走 Google Places（底图与搜索数据源分离）
-const searchProvider = computed(() => getMapSearchProvider())
-const searchProviderLabel = computed(() => getSearchProviderLabel())
+// 搜索与底图解耦：零 Key 默认 OSM，可选 Google/高德增强
+const searchProvider = computed(() => getMapSearchProvider(mapRegion.value))
+const searchProviderLabel = computed(() => getSearchProviderLabel(mapRegion.value))
 const searchResults = ref<PlaceSearchResult[]>([])
 const searchEmpty = ref(false)
 const isSearching = ref(false)
@@ -97,19 +97,26 @@ const switchingRegion = ref(false)
 const activeBaseMapLabel = ref('')
 
 const hasGoogleMapsKey = computed(() => Boolean(runtimeConfig.maps.googleMapsKey))
+const hasAmapKey = computed(() => Boolean(runtimeConfig.maps.amapKey))
 
 const searchEmptyMessage = computed(() => {
   if (hasGoogleMapsKey.value) {
     return '未找到相关地点。可尝试更简短的关键词、补充城市或地区名，也可以直接粘贴 Google 地图分享链接。'
   }
-  return '未找到相关地点。请配置 Google Maps Key，或粘贴地图分享链接。'
+  if (mapRegion.value === 'china') {
+    return '未找到相关地点。建议补充城市名（如「上海 咖啡馆」），或粘贴高德/百度/Google 地图分享链接。'
+  }
+  return '未找到相关地点。可尝试更简短的关键词，或粘贴地图分享链接。'
 })
 
 const searchHintMessage = computed(() => {
   if (hasGoogleMapsKey.value) {
-    return '地点搜索使用 Google Maps 数据，底图保持 CARTO/高德瓦片显示。也可直接粘贴地图链接。'
+    return '地点搜索使用 Google Maps，底图为 CARTO 手绘风。也可直接粘贴地图链接。'
   }
-  return '请配置 Google Maps Key 以启用地点搜索。'
+  if (hasAmapKey.value && mapRegion.value === 'china') {
+    return '国内搜索：OSM + 高德（已配置 Key）。底图国内/国外均为 CARTO 手绘风。'
+  }
+  return '零 Key 搜索使用 OpenStreetMap（Nominatim/Photon），国内建议加城市名。底图均为 CARTO 手绘风。'
 })
 
 function displayLatLng(lat: number, lng: number): [number, number] {
@@ -518,7 +525,7 @@ function applyFastBaseLayer(mode: MapRegionMode = mapRegion.value) {
 async function recoverBlankTiles() {
   if (!mapInstance || countLoadedTiles() > 0) return
 
-  if (mapRegion.value === 'global' && runtimeConfig.maps.googleMapsKey) {
+  if (runtimeConfig.maps.googleMapsKey) {
     const googleLayer = await promoteGoogleTileFallback(
       mapInstance,
       baseTileMount,
@@ -534,12 +541,7 @@ async function recoverBlankTiles() {
     }
   }
 
-  if (mapRegion.value === 'global') {
-    setMapRegion('china', false)
-    applyFastBaseLayer('china')
-    refreshMarkers()
-    syncMapLayout({ redraw: true })
-  }
+  syncMapLayout({ redraw: true })
 }
 
 async function autoLocateOnIdle() {
@@ -707,14 +709,18 @@ function applyLocationRegion(loc: MapLocation, city: string, country: string) {
 
 async function resolveLocationRegion(
   loc: MapLocation,
-  provider: 'google' | 'amap' | 'baidu' = searchProvider.value
+  provider: 'google' | 'amap' | 'baidu' | 'osm' = searchProvider.value
 ): Promise<{ city: string; country: string } | null> {
   const cached = regionResolveCache.get(loc.id)
   if (cached) return cached
 
   if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return null
 
-  const result = await reverseGeocode(loc.lat, loc.lng, provider)
+  const result = await reverseGeocode(
+    loc.lat,
+    loc.lng,
+    provider === 'osm' ? undefined : provider
+  )
   if (!result || (!result.city && !result.country)) return null
 
   const city = result.city || loc.city
@@ -944,8 +950,9 @@ async function searchPOI() {
     }
 
     const results = await searchPlaces(query, {
-      provider: searchProvider.value as 'google' | 'amap',
+      provider: searchProvider.value === 'osm' ? 'auto' : searchProvider.value,
       bias,
+      region: mapRegion.value,
     })
 
     searchResults.value = results
@@ -1076,7 +1083,11 @@ async function saveSpot() {
 
   let spotCity = ''
   let spotCountry = ''
-  const region = await reverseGeocode(addSpotLat.value, addSpotLng.value, searchProvider.value)
+  const region = await reverseGeocode(
+    addSpotLat.value,
+    addSpotLng.value,
+    searchProvider.value === 'osm' ? undefined : searchProvider.value
+  )
   if (region) {
     spotCity = region.city
     spotCountry = region.country
@@ -1232,7 +1243,7 @@ onUnmounted(() => {
             @click="switchMapRegion('china')"
           >
             <span class="map-region-option-name">国内</span>
-            <span class="map-region-option-desc">高德底图 · 中国大陆坐标</span>
+            <span class="map-region-option-desc">CARTO 手绘底图 · 默认上海中心</span>
           </button>
           <button
             type="button"
@@ -1242,7 +1253,7 @@ onUnmounted(() => {
             @click="switchMapRegion('global')"
           >
             <span class="map-region-option-name">国外</span>
-            <span class="map-region-option-desc">CARTO 底图 · 海外坐标系</span>
+            <span class="map-region-option-desc">CARTO 手绘底图 · 默认清迈中心</span>
           </button>
         </div>
       </Transition>
@@ -1583,6 +1594,10 @@ onUnmounted(() => {
 
 .map-canvas :deep(.leaflet-fade-anim .leaflet-tile-loaded) {
   opacity: 1 !important;
+}
+
+.map-canvas :deep(.hand-drawn-tile-layer) {
+  filter: saturate(0.94) brightness(1.02) contrast(0.98);
 }
 
 .map-init-overlay {
