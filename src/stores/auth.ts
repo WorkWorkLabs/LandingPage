@@ -164,10 +164,20 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  const missingSupabaseConfigError =
+    'Supabase 未正确配置。请在部署环境设置 VITE_SUPABASE_URL 与 VITE_SUPABASE_ANON_KEY 后重新构建部署，勿使用 placeholder.supabase.co。'
+
+  function ensureSupabaseReady() {
+    if (!hasSupabaseConfig()) {
+      throw new Error(missingSupabaseConfigError)
+    }
+  }
+
   // Sign in with Google (OAuth)
   async function signInWithGoogle(redirectPath = '/') {
     loading.value = true
     try {
+      ensureSupabaseReady()
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -188,6 +198,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function signInWithGitHub(redirectPath = '/') {
     loading.value = true
     try {
+      ensureSupabaseReady()
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: {
@@ -208,6 +219,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function signInWithTelegram(redirectPath = '/') {
     loading.value = true
     try {
+      ensureSupabaseReady()
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'telegram',
         options: {

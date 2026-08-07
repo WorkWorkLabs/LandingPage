@@ -33,6 +33,20 @@ export function getAuthRedirectUrl(path = '/'): string {
   return new URL(path, getAppOrigin()).toString()
 }
 
+const PLACEHOLDER_SUPABASE_HOSTS = ['placeholder.supabase.co', 'your-project-id.supabase.co']
+
 export function hasSupabaseConfig(): boolean {
-  return Boolean(runtimeConfig.supabase.url && runtimeConfig.supabase.anonKey)
+  const url = runtimeConfig.supabase.url
+  const key = runtimeConfig.supabase.anonKey
+  if (!url || !key) return false
+  if (key.includes('placeholder') || key.includes('your-anon-key')) return false
+  try {
+    const host = new URL(url).hostname
+    if (PLACEHOLDER_SUPABASE_HOSTS.some((h) => host === h || host.includes('placeholder'))) {
+      return false
+    }
+  } catch {
+    return false
+  }
+  return true
 }
