@@ -1,10 +1,25 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { copyFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
+function spaFallbackPlugin() {
+  return {
+    name: 'spa-github-pages-fallback',
+    closeBundle() {
+      const indexFile = resolve(__dirname, 'dist/index.html')
+      if (existsSync(indexFile)) {
+        copyFileSync(indexFile, resolve(__dirname, 'dist/404.html'))
+      }
+    },
+  }
+}
+
 export default defineConfig({
+  base: process.env.GITHUB_PAGES === 'true' ? '/LandingPage/' : '/',
   plugins: [
     vue(),
+    spaFallbackPlugin(),
   ],
   server: {
     port: 3000,

@@ -10,9 +10,8 @@ export function loadGoogleMapsJs(options: { places?: boolean } = {}): Promise<bo
 
   if (typeof window === 'undefined') return Promise.resolve(false)
 
-  const needsPlaces = options.places !== false
   if (window.google?.maps?.Map) {
-    if (!needsPlaces || window.google.maps.places) return Promise.resolve(true)
+    return Promise.resolve(true)
   }
 
   if (!mapsScriptPromise) {
@@ -30,9 +29,9 @@ export function loadGoogleMapsJs(options: { places?: boolean } = {}): Promise<bo
         finish(Boolean(window.google?.maps?.Map))
       }
 
-      const libraries = needsPlaces ? '&libraries=places' : ''
+      void options
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}${libraries}&callback=${callbackName}`
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async&callback=${callbackName}`
       script.async = true
       script.defer = true
       script.onerror = () => finish(false)

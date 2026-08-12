@@ -51,7 +51,7 @@ export function getBaseMapLabel(_mode: MapRegionMode): string {
 
 export function getSearchProviderLabel(region: MapRegionMode = 'global'): string {
   const provider = getMapSearchProvider(region)
-  if (provider === 'google') return 'Google 搜索'
+  if (provider === 'google') return 'Google / OSM 搜索'
   if (provider === 'amap') return 'OSM + 高德搜索'
   return 'OSM 搜索'
 }

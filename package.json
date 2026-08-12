@@ -11,7 +11,8 @@
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
     "format": "prettier --write src/",
-    "deploy": "npm run build"
+    "deploy": "npm run build",
+    "test:geo": "node --experimental-strip-types scripts/test-geo.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",

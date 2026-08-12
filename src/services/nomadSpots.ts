@@ -1,5 +1,11 @@
 import { supabase } from '@/lib/supabase'
 import type { NomadSpot } from '@/types/database'
+import { friendlyNetworkError, withTimeout } from '@/utils/errors'
+import {
+  createLocalNomadSpot,
+  mergeRemoteAndLocalSpots,
+  upsertLocalNomadSpot,
+} from '@/services/localSpots'
 
 export type CreateNomadSpotInput = {
   creatorId: string
@@ -54,20 +60,34 @@ function writeNomadSpotsCache(data: NomadSpot[]): void {
 }
 
 async function fetchNomadSpotsFromNetwork(): Promise<{ data: NomadSpot[]; error: string | null }> {
-  const { data, error } = await supabase
-    .from('nomad_spots')
-    .select(SPOT_COLUMNS)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(200)
+  try {
+    const { data, error } = await withTimeout(
+      supabase
+        .from('nomad_spots')
+        .select(SPOT_COLUMNS)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(200),
+      5000,
+      '地点服务连接超时'
+    )
 
-  if (error) {
-    return { data: [], error: error.message }
+    if (error) {
+      return {
+        data: mergeRemoteAndLocalSpots([]),
+        error: friendlyNetworkError(error.message, '暂时无法同步云端地点'),
+      }
+    }
+
+    const spots = mergeRemoteAndLocalSpots((data ?? []) as NomadSpot[])
+    writeNomadSpotsCache(spots)
+    return { data: spots, error: null }
+  } catch (error) {
+    return {
+      data: mergeRemoteAndLocalSpots([]),
+      error: friendlyNetworkError(error, '暂时无法同步云端地点，已显示本地地点'),
+    }
   }
-
-  const spots = (data ?? []) as NomadSpot[]
-  writeNomadSpotsCache(spots)
-  return { data: spots, error: null }
 }
 
 let prefetchPromise: Promise<{ data: NomadSpot[]; error: string | null }> | null = null
@@ -99,28 +119,38 @@ export async function revalidateNomadSpots(): Promise<{ data: NomadSpot[]; error
 }
 
 export async function createNomadSpot(input: CreateNomadSpotInput): Promise<{ data: NomadSpot | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from('nomad_spots')
-    .insert({
-      creator_id: input.creatorId,
-      name: input.name,
-      description: input.description,
-      latitude: input.latitude,
-      longitude: input.longitude,
-      city: input.city || null,
-      country: input.country || null,
-      tags: input.tags,
-      images: input.images ?? [],
-      status: 'active',
-    })
-    .select(SPOT_COLUMNS)
-    .single()
+  try {
+    const { data, error } = await withTimeout(
+      supabase
+        .from('nomad_spots')
+        .insert({
+          creator_id: input.creatorId,
+          name: input.name,
+          description: input.description,
+          latitude: input.latitude,
+          longitude: input.longitude,
+          city: input.city || null,
+          country: input.country || null,
+          tags: input.tags,
+          images: input.images ?? [],
+          status: 'active',
+        })
+        .select(SPOT_COLUMNS)
+        .single(),
+      3500,
+      '保存超时'
+    )
 
-  if (error) {
-    return { data: null, error: error.message }
+    if (!error && data) {
+      upsertLocalNomadSpot(data as NomadSpot)
+      return { data: data as NomadSpot, error: null }
+    }
+  } catch {
+    // fall through to local save
   }
 
-  return { data: data as NomadSpot, error: null }
+  const local = createLocalNomadSpot(input)
+  return { data: local, error: null }
 }
 
 export async function updateNomadSpotRegion(

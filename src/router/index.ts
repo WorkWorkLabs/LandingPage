@@ -63,7 +63,7 @@ const routes: RouteRecordRaw[] = [
     name: 'NomadMap',
     component: NomadMap,
     meta: {
-      title: '游牧者地图 - WorkWork',
+      title: '游民地图 - WorkWork',
       description: '数字游民全球工作地点地图'
     }
   },

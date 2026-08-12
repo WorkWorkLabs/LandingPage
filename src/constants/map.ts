@@ -40,22 +40,7 @@ export interface MapLocation {
   createdAt: string
 }
 
-// 中国大陆边界检测（简化版）
-const CHINA_BOUNDS = {
-  minLng: 73.0,
-  maxLng: 135.5,
-  minLat: 3.0,
-  maxLat: 53.5,
-}
-
-export function isInChina(lng: number, lat: number): boolean {
-  return (
-    lng >= CHINA_BOUNDS.minLng &&
-    lng <= CHINA_BOUNDS.maxLng &&
-    lat >= CHINA_BOUNDS.minLat &&
-    lat <= CHINA_BOUNDS.maxLat
-  )
-}
+export { isInChina } from '@/utils/geoBounds'
 
 // 默认中心点：清迈（游民热门城市）
 export const DEFAULT_CENTER = { lat: 18.7883, lng: 98.9853 }

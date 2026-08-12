@@ -11,6 +11,7 @@
 import { runtimeConfig } from '@/config/app'
 import { loadGoogleMapsJs } from '@/utils/googleMapsLoader'
 import { searchGooglePlacesByText } from '@/utils/googlePlaces'
+import { isCoordinateOnlyInput, normalizeCoordinateText } from '@/utils/geoBounds'
 
 export interface ParsedLocation {
   lat: number
@@ -572,16 +573,12 @@ export async function resolveLocation(
   let trimmed = input.trim()
   if (!trimmed) return null
 
-  // 清理 Google 地图常见的度数符号，便于直接粘贴坐标
-  trimmed = trimmed.replace(/[°′″'NSEW\s]/gi, (m) => {
-    if (/[NSEW]/i.test(m)) return ''
-    if (/[,\s]/.test(m)) return ','
-    return ''
-  }).replace(/,+/g, ',').replace(/^\s*,\s*|\s*,\s*$/g, '').trim()
+  // 只清洗纯坐标文本。绝不能对 URL / 地名去掉 N/S/E/W 字母。
+  const coordinateInput = isCoordinateOnlyInput(trimmed) ? normalizeCoordinateText(trimmed) : trimmed
 
   // 优先尝试从任意输入中直接提取坐标（包括用户直接粘贴 "lat, lng"）
-  const directCoords = extractCoordsFromUrl(trimmed) || (() => {
-    const m = trimmed.match(COORD_REGEX)
+  const directCoords = extractCoordsFromUrl(coordinateInput) || (() => {
+    const m = coordinateInput.match(COORD_REGEX)
     if (m) {
       let lat = parseFloat(m[1])
       let lng = parseFloat(m[2])
@@ -782,9 +779,13 @@ function rankPlaceResults(results: PlaceSearchResult[], query: string): PlaceSea
     if (result.source === 'amap' && /[\u4e00-\u9fff]/.test(query)) score += 4
 
     const combinedText = `${nameText} ${result.address.toLowerCase()}`
+    const aliasHits = expandPlaceAliases(query).filter((alias) =>
+      combinedText.includes(alias.toLowerCase())
+    ).length
     const matchedDistinctive = distinctiveTokens.filter((token) => combinedText.includes(token)).length
-    if (distinctiveTokens.length > 0 && matchedDistinctive === 0 && result.source !== 'google') {
-      score = 0
+    if (aliasHits) score += aliasHits * 4
+    if (distinctiveTokens.length > 0 && matchedDistinctive === 0 && aliasHits === 0 && result.source !== 'google') {
+      score = Math.min(score, 2)
     }
 
     return { result, score, matchedDistinctive }
@@ -810,6 +811,23 @@ function mergePlaceResults(target: PlaceSearchResult[], incoming: PlaceSearchRes
   }
 }
 
+const PLACE_ALIASES: Array<[RegExp, string[]]> = [
+  [/west\s*lake|西湖/i, ['西湖', 'West Lake Hangzhou', '杭州西湖']],
+  [/hangzhou|杭州/i, ['杭州', 'Hangzhou']],
+  [/shanghai|上海/i, ['上海', 'Shanghai']],
+  [/chiang\s*mai|清迈/i, ['Chiang Mai', '清迈']],
+  [/bali|巴厘/i, ['Bali', '巴厘岛']],
+  [/lisbon|里斯本/i, ['Lisbon', '里斯本']],
+]
+
+function expandPlaceAliases(query: string): string[] {
+  const extras: string[] = []
+  for (const [pattern, names] of PLACE_ALIASES) {
+    if (pattern.test(query)) extras.push(...names)
+  }
+  return extras
+}
+
 /** 清理搜索词：去掉 @、多余空格和常见 filler */
 function normalizeSearchQuery(query: string): string {
   return query
@@ -832,12 +850,12 @@ function buildSearchQueryVariants(query: string): string[] {
 
   const words = normalized.split(' ').filter(Boolean)
   if (words.length >= 3) {
-    const reversed = [...words].reverse().join(' ')
-    variants.add(reversed)
-
     const core = words.filter((word) => !/^(of|the|at|in|night|market)$/i.test(word)).join(' ')
     if (core) variants.add(core)
   }
+
+  const aliases = expandPlaceAliases(trimmed)
+  for (const alias of aliases) variants.add(alias)
 
   return [...variants].filter(Boolean)
 }
@@ -935,7 +953,8 @@ async function searchWithGooglePlaces(
     if (merged.length) return merged
   }
 
-  return searchWithGooglePlacesLegacy(query, bias)
+  // 旧版 PlacesService 在多数项目里未开通，会刷 LegacyApiNotActivatedMapError，不再回退。
+  return []
 }
 
 async function searchWithAmap(query: string): Promise<PlaceSearchResult[]> {
