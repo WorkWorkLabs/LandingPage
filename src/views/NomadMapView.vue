@@ -54,6 +54,9 @@ import {
 } from '@/services/spotReactions'
 import { mergeRemoteAndLocalSpots } from '@/services/localSpots'
 import LoadingSpinner from '@/components/ui/LoadingSpinner.vue'
+import MapSpotList from '@/components/map/MapSpotList.vue'
+import MapCategoryIcon from '@/components/map/MapCategoryIcon.vue'
+import '@/styles/opentrip-map.css'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -154,7 +157,7 @@ let mapResizeObserver: ResizeObserver | null = null
 let mapRefreshTimer: number | null = null
 let markerRefreshFrame: number | null = null
 let lastMapLayoutSize = { width: 0, height: 0 }
-const markerIconCache = new Map<MapCategory, L.DivIcon>()
+const markerIconCache = new Map<string, L.DivIcon>()
 
 function scheduleIdle(task: () => void, timeout = 2000) {
   if ('requestIdleCallback' in window) {
@@ -873,32 +876,20 @@ async function loadNomadLocations() {
 // ============================================
 // 自定义标记图标
 // ============================================
-function createMarkerIcon(category: MapCategory): L.DivIcon {
-  const cached = markerIconCache.get(category)
+function createMarkerIcon(category: MapCategory, num: number, active: boolean): L.DivIcon {
+  const cacheKey = `${category}-${num}-${active}`
+  const cached = markerIconCache.get(cacheKey)
   if (cached) return cached
 
   const color = getCategoryColor(category)
-  const emoji = getCategoryEmoji(category)
   const icon = L.divIcon({
-    className: 'nomad-marker',
-    html: `
-      <div style="
-        width: 44px; height: 44px;
-        border-radius: 50%;
-        border: 3px solid white;
-        box-shadow: 0 2px 12px rgba(0,0,0,0.2);
-        background: ${color};
-        display: flex; align-items: center; justify-content: center;
-        font-size: 18px; cursor: pointer;
-      ">
-        ${emoji}
-      </div>
-    `,
-    iconSize: [44, 44],
-    iconAnchor: [22, 22],
+    className: 'ot-leaflet-marker',
+    html: `<div class="ot-marker" data-active="${active}" style="background:${color}">${num}</div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
   })
 
-  markerIconCache.set(category, icon)
+  markerIconCache.set(cacheKey, icon)
   return icon
 }
 
@@ -909,8 +900,8 @@ function refreshMarkersNow() {
   if (!markerGroup || !mapInstance) return
   markerGroup.clearLayers()
 
-  filteredLocations.value.forEach((loc) => {
-    const icon = createMarkerIcon(loc.category)
+  filteredLocations.value.forEach((loc, index) => {
+    const icon = createMarkerIcon(loc.category, index + 1, selectedLocation.value?.id === loc.id)
     const [dLat, dLng] = displayLatLng(loc.lat, loc.lng)
     const marker = L.marker([dLat, dLng], {
       icon,
@@ -938,6 +929,10 @@ function refreshMarkers() {
 }
 
 watch(filteredLocations, () => {
+  refreshMarkers()
+})
+
+watch(selectedLocation, () => {
   refreshMarkers()
 })
 
@@ -1342,54 +1337,67 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="map-page">
-    <!-- 顶部栏：详情页显示返回，否则显示搜索 -->
-    <div class="map-topbar" :class="{ 'map-topbar--detail': showDetail }">
-      <button
-        v-if="showDetail"
-        type="button"
-        class="map-back-btn"
-        @click="closeDetail"
-      >
-        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-        </svg>
-        <span>返回地图</span>
-      </button>
-      <template v-else>
-        <div class="map-search-wrap">
-          <div class="map-search">
-            <svg class="map-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="搜索城市、地点或已有标记…"
-              class="map-search-input"
-              @keyup.enter="runTopSearch(searchQuery)"
-            />
-            <div v-if="geoSearching" class="map-search-status">搜</div>
-          </div>
-          <div v-if="geoSearchResults.length && !showAddSpot" class="map-geo-results">
-            <button
-              v-for="(hit, idx) in geoSearchResults"
-              :key="`${hit.lat}-${hit.lng}-${idx}`"
-              type="button"
-              class="map-geo-result"
-              @click="selectTopSearchResult(hit)"
-            >
-              <span class="map-geo-result-name">{{ hit.name }}</span>
-              <span class="map-geo-result-addr">{{ hit.address }}</span>
-            </button>
-          </div>
-        </div>
-        <button class="map-menu-btn" title="返回首页" @click="router.push('/')">
+  <div class="map-page ot-map">
+    <aside class="ot-sidebar">
+      <header class="ot-sidebar-head">
+        <button type="button" class="ot-back" title="返回首页" aria-label="返回首页" @click="router.push('/')">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
-      </template>
+        <div class="ot-sidebar-title">
+          <h1>游民地图</h1>
+          <p>{{ filteredLocations.length }} spots</p>
+        </div>
+        <button
+          v-if="!showAddSpot && !showDetail"
+          type="button"
+          class="ot-add-inline"
+          @click="openAddSpotPanel"
+        >
+          添加
+        </button>
+      </header>
+
+      <MapSpotList
+        v-if="!showDetail && !showAddSpot"
+        :spots="filteredLocations"
+        :active-id="selectedLocation?.id ?? null"
+        :active-category="activeCategory"
+        @select="openDetail"
+        @filter="activeCategory = $event"
+      />
+    </aside>
+
+    <div class="ot-stage">
+    <div class="map-topbar">
+      <div class="map-search-wrap">
+        <div class="map-search">
+          <svg class="map-search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Search places..."
+            class="map-search-input"
+            @keyup.enter="runTopSearch(searchQuery)"
+          />
+          <div v-if="geoSearching" class="map-search-status">搜</div>
+        </div>
+        <div v-if="geoSearchResults.length && !showAddSpot" class="map-geo-results">
+          <button
+            v-for="(hit, idx) in geoSearchResults"
+            :key="`${hit.lat}-${hit.lng}-${idx}`"
+            type="button"
+            class="map-geo-result"
+            @click="selectTopSearchResult(hit)"
+          >
+            <span class="map-geo-result-name">{{ hit.name }}</span>
+            <span class="map-geo-result-addr">{{ hit.address }}</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- 右上角：国内/国外地图切换 -->
@@ -1436,19 +1444,6 @@ onUnmounted(() => {
       </Transition>
     </div>
 
-    <!-- 分类筛选：详情面板打开时隐藏 -->
-    <div v-if="!showDetail && !showAddSpot" class="map-categories">
-      <button
-        v-for="cat in MAP_CATEGORIES"
-        :key="cat.id"
-        :class="['map-cat-chip', { active: activeCategory === cat.id }]"
-        @click="activeCategory = cat.id"
-      >
-        <span class="map-cat-emoji">{{ cat.emoji }}</span>
-        <span>{{ cat.label }}</span>
-      </button>
-    </div>
-
     <!-- 地图容器 -->
     <div
       ref="mapContainer"
@@ -1460,8 +1455,12 @@ onUnmounted(() => {
       <LoadingSpinner size="lg" text="地图加载中..." />
     </div>
 
-    <!-- 手绘纸张纹理覆盖 -->
-    <div class="map-paper-overlay" />
+    <div v-if="!showDetail && !showAddSpot" class="ot-legend">
+      <div v-for="cat in spotCategories.slice(0, 6)" :key="cat.id" class="ot-legend-row">
+        <span class="ot-legend-dot" :style="{ background: cat.color }" />
+        <span>{{ cat.label }}</span>
+      </div>
+    </div>
 
 
 
@@ -1569,11 +1568,7 @@ onUnmounted(() => {
 
         <div class="panel-content">
           <div class="panel-category">
-            <span
-              class="panel-cat-dot"
-              :style="{ background: getCategoryColor(selectedLocation.category) }"
-            />
-            <span>{{ getCategoryEmoji(selectedLocation.category) }}</span>
+            <MapCategoryIcon :category="selectedLocation.category" />
             <span class="panel-cat-label">
               {{ MAP_CATEGORIES.find((c) => c.id === selectedLocation.category)?.label }}
             </span>
@@ -1750,7 +1745,8 @@ onUnmounted(() => {
 
     <!-- 底部归属信息 -->
     <div v-if="mapReady" class="map-engine-badge">
-      手绘旅册 · {{ activeBaseMapLabel || baseMapLabel }} · {{ searchProviderLabel }} · Leaflet
+      {{ activeBaseMapLabel || baseMapLabel }} · {{ searchProviderLabel }}
+    </div>
     </div>
   </div>
 </template>
@@ -1763,9 +1759,114 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: #F8F5F0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  display: flex;
   overflow: hidden;
+}
+
+.ot-sidebar {
+  display: flex;
+  width: min(360px, 38vw);
+  min-width: 280px;
+  flex-direction: column;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  z-index: 30;
+}
+
+.ot-sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 8px;
+}
+
+.ot-back {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.ot-back:hover {
+  background: var(--ink-100);
+}
+
+.ot-back svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ot-sidebar-title {
+  min-width: 0;
+  flex: 1;
+}
+
+.ot-sidebar-title h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.ot-sidebar-title p {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ot-add-inline {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ink-800);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ot-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.ot-legend {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #fff 90%, transparent);
+  box-shadow: var(--shadow-border), var(--shadow-md);
+  backdrop-filter: blur(8px);
+}
+
+.ot-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ot-legend-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 999px;
 }
 
 .map-canvas {
@@ -1776,7 +1877,12 @@ onUnmounted(() => {
 }
 
 .map-canvas :deep(.leaflet-container) {
-  background: #F8F5F0;
+  background: #e9ecf4;
+}
+
+.map-canvas :deep(.ot-leaflet-marker) {
+  background: none !important;
+  border: 0 !important;
 }
 
 .map-canvas :deep(.leaflet-tile),
@@ -1790,7 +1896,7 @@ onUnmounted(() => {
 }
 
 .map-canvas :deep(.hand-drawn-tile-layer) {
-  filter: saturate(0.94) brightness(1.02) contrast(0.98);
+  filter: saturate(0.78) brightness(1.04) contrast(0.96);
 }
 
 .map-init-overlay {
@@ -1819,35 +1925,19 @@ onUnmounted(() => {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
-/* 手绘纸张覆盖层 */
-.map-paper-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 3px,
-      rgba(139, 119, 101, 0.015) 3px,
-      rgba(139, 119, 101, 0.015) 4px
-    );
-}
-
 /* ============================================
    顶部搜索栏
    ============================================ */
 .map-topbar {
   position: absolute;
   top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 16px;
+  transform: none;
   z-index: 1200;
   display: flex;
   align-items: center;
   gap: 12px;
-  width: min(90%, 480px);
+  width: min(calc(100% - 32px), 320px);
 }
 
 .map-topbar--detail {
@@ -2014,9 +2104,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   background: white;
-  border-radius: 24px;
-  padding: 10px 18px;
-  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #000 6%, transparent),
+    0 4px 12px -2px color-mix(in srgb, #141a30 12%, transparent);
 }
 
 .map-search-status {
@@ -2461,6 +2553,27 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
+  .ot-sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 30;
+    width: min(86vw, 360px);
+    min-width: 0;
+    box-shadow: 8px 0 24px rgba(20, 26, 48, 0.12);
+  }
+
+  .ot-legend {
+    display: none;
+  }
+
+  .map-detail-panel,
+  .map-add-panel {
+    width: min(86vw, 360px);
+    min-width: 0;
+  }
+
   .map-topbar {
     left: 12px;
     right: 64px;
@@ -2561,22 +2674,24 @@ onUnmounted(() => {
    ============================================ */
 :deep(.leaflet-control-zoom) {
   border: none !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08) !important;
-  border-radius: 12px !important;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #000 8%, transparent),
+    0 1px 3px rgba(20, 26, 48, 0.12) !important;
+  border-radius: 10px !important;
   overflow: hidden;
 }
 
 :deep(.leaflet-control-zoom a) {
-  width: 36px !important;
-  height: 36px !important;
-  line-height: 36px !important;
+  width: 40px !important;
+  height: 40px !important;
+  line-height: 40px !important;
   font-size: 18px !important;
-  color: #595959 !important;
+  color: #28304a !important;
 }
 
 :deep(.leaflet-control-zoom a:hover) {
-  background: #F7F9FB !important;
-  color: #48A9DE !important;
+  background: #f2f4f9 !important;
+  color: #3f6fc9 !important;
 }
 
 :deep(.leaflet-control-attribution) {
@@ -2593,15 +2708,17 @@ onUnmounted(() => {
    详情面板（右侧滑入）
    ============================================ */
 .map-detail-panel {
-  position: absolute;
+  position: fixed;
   top: 0;
-  right: 0;
+  left: 0;
   bottom: 0;
   z-index: 1100;
-  width: min(400px, 100vw);
+  width: min(360px, 38vw);
+  min-width: 280px;
   max-width: 100%;
   background: white;
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  border-right: 1px solid color-mix(in srgb, #141a30 9%, transparent);
+  box-shadow: none;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -3090,18 +3207,20 @@ onUnmounted(() => {
    浮动毛玻璃添加表单
    ============================================ */
 .map-add-panel {
-  position: absolute;
-  top: 70px;
-  right: 20px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
   z-index: 1200;
-  width: 380px;
-  max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 140px);
-  background: rgba(255, 255, 255, 0.97);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12),
-              0 1px 3px rgba(0, 0, 0, 0.06);
+  width: min(360px, 38vw);
+  min-width: 280px;
+  max-width: 100%;
+  max-height: none;
+  background: #fff;
+  border: 0;
+  border-right: 1px solid color-mix(in srgb, #141a30 9%, transparent);
+  border-radius: 0;
+  box-shadow: none;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

@@ -4,18 +4,18 @@ export const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY ?? ''
 
 // 地图分类（数字游民生活场景）
 export const MAP_CATEGORIES = [
-  { id: 'all', label: '全部', emoji: '📍', color: '#2A9D3E' },
-  { id: 'work', label: '办公', emoji: '💻', color: '#2E86AB' },
-  { id: 'cafe', label: '咖啡', emoji: '☕', color: '#8B5E3C' },
-  { id: 'stay', label: '住宿', emoji: '🏨', color: '#6C5CE7' },
-  { id: 'food', label: '美食', emoji: '🍜', color: '#E85D3A' },
-  { id: 'community', label: '社群', emoji: '🤝', color: '#00B894' },
-  { id: 'event', label: '活动', emoji: '🎉', color: '#9B59B6' },
-  { id: 'life', label: '生活', emoji: '🛒', color: '#636E72' },
-  { id: 'outdoor', label: '户外', emoji: '🌿', color: '#27AE60' },
-  { id: 'fitness', label: '运动', emoji: '💪', color: '#E17055' },
-  { id: 'fun', label: '玩乐', emoji: '🎮', color: '#4A8FE7' },
-  { id: 'hidden', label: '彩蛋', emoji: '🥚', color: '#F4A261' },
+  { id: 'all', label: '全部', emoji: '📍', color: '#28304a' },
+  { id: 'work', label: '办公', emoji: '💻', color: '#3f6fc9' },
+  { id: 'cafe', label: '咖啡', emoji: '☕', color: '#d97706' },
+  { id: 'stay', label: '住宿', emoji: '🏨', color: '#305bb0' },
+  { id: 'food', label: '美食', emoji: '🍜', color: '#c2410c' },
+  { id: 'community', label: '社群', emoji: '🤝', color: '#15803d' },
+  { id: 'event', label: '活动', emoji: '🎉', color: '#6b8fe3' },
+  { id: 'life', label: '生活', emoji: '🛒', color: '#545f78' },
+  { id: 'outdoor', label: '户外', emoji: '🌿', color: '#16a34a' },
+  { id: 'fitness', label: '运动', emoji: '💪', color: '#b45309' },
+  { id: 'fun', label: '玩乐', emoji: '🎮', color: '#3f6fc9' },
+  { id: 'hidden', label: '彩蛋', emoji: '🥚', color: '#97a0b6' },
 ] as const
 
 export type MapCategory = (typeof MAP_CATEGORIES)[number]['id']
